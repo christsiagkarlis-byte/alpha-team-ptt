@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07100d">
+  <meta name="description" content="Alpha Team secure Push-to-Talk intercom dashboard">
+  <title>Alpha Team Intercom</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="security-icon" aria-hidden="true"><span>✦</span></div>
+        <div>
+          <p class="eyebrow">SECURITY NETWORK</p>
+          <h1>Alpha Team Intercom</h1>
+        </div>
+      </div>
+      <div id="connectionBadge" class="connection-badge disconnected" role="status" aria-live="polite">
+        <span class="status-dot"></span><span id="connectionText">Disconnected</span>
+      </div>
+    </header>
+
+    <section class="identity-panel panel" aria-labelledby="identityTitle">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">DEVICE AUTHENTICATION</p>
+          <h2 id="identityTitle">Secure Device Link</h2>
+        </div>
+        <span id="identityState" class="mini-state">OFFLINE</span>
+      </div>
+      <div class="identity-controls">
+        <label>Profile
+          <select id="usernameInput" autocomplete="username">
+            <option value="">Select identity</option>
+          </select>
+        </label>
+        <label>Hardware UUID
+          <input id="hardwareUuidInput" type="text" autocomplete="off" maxlength="255" spellcheck="false" placeholder="Bound device identifier">
+        </label>
+        <button id="connectButton" class="secondary-button" type="button">CONNECT DEVICE</button>
+      </div>
+      <p id="connectionMessage" class="helper-text">Enter the bound identity and device UUID to establish a secure channel.</p>
+    </section>
+
+    <section class="channel-panel panel" aria-labelledby="channelTitle">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">LIVE CHANNEL</p>
+          <h2 id="channelTitle">Alpha Team</h2>
+        </div>
+        <label class="channel-select-label">Channel
+          <select id="channelInput">
+            <option value="alpha-team">ALPHA TEAM</option>
+          </select>
+        </label>
+      </div>
+      <div class="ptt-stage">
+        <div id="transmitReadout" class="transmit-readout">CHANNEL READY</div>
+        <button id="pttButton" class="ptt-button" type="button" disabled aria-label="Push to talk">
+          <span class="ptt-ring ring-one"></span>
+          <span class="ptt-ring ring-two"></span>
+          <span class="ptt-core"><strong id="pttLabel">PUSH TO TALK</strong><small id="pttHint">CONNECT DEVICE FIRST</small></span>
+        </button>
+        <p class="ptt-instruction">Press and hold to transmit · Release to listen</p>
+      </div>
+    </section>
+
+    <section class="directory-panel panel" aria-labelledby="directoryTitle">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">OPERATIONS ROSTER</p>
+          <h2 id="directoryTitle">Alpha Team Directory</h2>
+        </div>
+        <span id="onlineCount" class="count-badge">0 / 31 ONLINE</span>
+      </div>
+      <div id="directoryGrid" class="directory-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="alerts-panel panel" aria-labelledby="alertsTitle">
+      <div class="panel-heading compact-heading">
+        <div>
+          <p class="eyebrow">COMMAND CHANNEL</p>
+          <h2 id="alertsTitle">System Alerts</h2>
+        </div>
+        <span class="alert-marker">CRITICAL</span>
+      </div>
+      <div id="alertsLog" class="alerts-log" aria-live="assertive">
+        <p class="empty-alert">No emergency alerts received.</p>
+      </div>
+    </section>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

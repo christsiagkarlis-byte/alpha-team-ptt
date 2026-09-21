@@ -1,0 +1,78 @@
+services:
+  alpha-db:
+    image: postgres:16-alpine
+    container_name: alpha-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database.sql:/docker-entrypoint-initdb.d/001_database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - alpha-internal
+
+  alpha-cache:
+    image: redis:7-alpine
+    container_name: alpha-cache
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - alpha-internal
+
+  alpha-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alpha-app
+    restart: unless-stopped
+    init: true
+    depends_on:
+      alpha-db:
+        condition: service_healthy
+      alpha-cache:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER must be set in .env}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@alpha-db:5432/${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      REDIS_URL: redis://alpha-cache:6379
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY must be set in .env}
+      JWT_ISSUER: ${JWT_ISSUER:-alpha-team-ptt}
+      ACTIVATION_TTL_SECONDS: ${ACTIVATION_TTL_SECONDS:-600}
+      REDIS_STATUS_TTL_SECONDS: ${REDIS_STATUS_TTL_SECONDS:-120}
+      PTT_LOCK_TTL_SECONDS: ${PTT_LOCK_TTL_SECONDS:-30}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      PGSSL: "false"
+    ports:
+      - "${PORT:-3000}:3000"
+    networks:
+      - alpha-internal
+
+volumes:
+  postgres_data:
+    name: alpha_team_postgres_data
+  redis_data:
+    name: alpha_team_redis_data
+
+networks:
+  alpha-internal:
+    name: alpha_team_internal
+    driver: bridge
+    internal: true
