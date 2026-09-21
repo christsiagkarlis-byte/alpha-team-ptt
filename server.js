@@ -51,8 +51,10 @@ const pool = new Pool({
 });
 
 const redis = createClient({
-    url: process.env.REDIS_URL
+    url: process.env.REDIS_URL,
+    socket: { tls: true }
 });
+
 
 
 redis.on('error', (error) => console.error('Redis error:', error.message));
