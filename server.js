@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
 const Redis = require('ioredis');
 
+
 const { Server } = require('socket.io');
 
 const requiredEnvironment = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'ADMIN_API_KEY'];
@@ -50,11 +51,7 @@ const pool = new Pool({
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000
 });
-
 const redis = new Redis(process.env.REDIS_URL);
-
-
-
 
 
 redis.on('error', (error) => console.error('Redis error:', error.message));
