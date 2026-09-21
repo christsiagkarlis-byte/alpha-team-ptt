@@ -57,8 +57,6 @@ const redis = new Redis(process.env.REDIS_URL, {
     }
 });
 
-const redis = new Redis(process.env.REDIS_URL);
-
 
 redis.on('error', (error) => console.error('Redis error:', error.message));
 console.log("Redis client initialized");
