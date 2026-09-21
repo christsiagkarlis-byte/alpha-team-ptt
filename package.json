@@ -2,7 +2,7 @@
   "name": "alpha-team-ptt-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Closed Alpha Team Push-to-Talk intercom backend with PostgreSQL and Redis.",
+  "description": "Closed Alpha Team Push-to-Talk internal",
   "main": "server.js",
   "type": "commonjs",
   "engines": {
@@ -18,6 +18,8 @@
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1",
     "redis": "^4.7.0",
+    "ioredis": "^5.4.1",
     "socket.io": "^4.8.1"
   }
 }
+
