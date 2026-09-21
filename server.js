@@ -6,7 +6,8 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
-const { createClient } = require('redis');
+const Redis = require('ioredis');
+
 const { Server } = require('socket.io');
 
 const requiredEnvironment = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'ADMIN_API_KEY'];
@@ -50,16 +51,8 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000
 });
 
-const redis = createClient({
-    url: process.env.REDIS_URL,
-    socket: {
-        tls: true,
-        reconnectStrategy: (retries) => {
-            // Προσπάθεια επανασύνδεσης κάθε 2 δευτερόλεπτα
-            return 2000;
-        }
-    }
-});
+const redis = new Redis(process.env.REDIS_URL);
+
 
 
 
