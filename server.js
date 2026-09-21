@@ -639,7 +639,6 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 async function initialize() {
-  await redis.connect();
   await pool.query('SELECT 1');
   httpServer.listen(PORT, '0.0.0.0', () => console.log(`Alpha Team PTT backend listening on port ${PORT}`));
 }
