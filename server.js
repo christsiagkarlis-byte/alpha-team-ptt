@@ -52,8 +52,15 @@ const pool = new Pool({
 
 const redis = createClient({
     url: process.env.REDIS_URL,
-    socket: { tls: true }
+    socket: {
+        tls: true,
+        reconnectStrategy: (retries) => {
+            // Προσπάθεια επανασύνδεσης κάθε 2 δευτερόλεπτα
+            return 2000;
+        }
+    }
 });
+
 
 
 
