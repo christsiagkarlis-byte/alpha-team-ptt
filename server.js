@@ -52,9 +52,8 @@ const pool = new Pool({
 
 const redis = createClient({ url: process.env.REDIS_URL });
 redis.on('error', (error) => console.error('Redis error:', error.message));
-if (!redis.isOpen) {
-    redis.connect().catch(console.error);
-}
+console.log("Redis client initialized");
+
 const LOCK_ACQUIRE_SCRIPT = `
 local current = redis.call('GET', KEYS[1])
 if current then
