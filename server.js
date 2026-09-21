@@ -52,10 +52,9 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000
 });
 const redis = new Redis(process.env.REDIS_URL, {
-    redisOptions: {
-        tls: {}
-    }
+    tls: {}
 });
+
 
 
 redis.on('error', (error) => console.error('Redis error:', error.message));
