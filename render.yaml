@@ -1,0 +1,76 @@
+services:
+  - type: web
+    name: team-stadium
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --omit=dev --ignore-scripts
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: TRUST_PROXY
+        value: "true"
+      - key: PGSSL
+        value: "true"
+      - key: CORS_ORIGIN
+        sync: false
+      - key: WEBAUTHN_RP_NAME
+        value: Team Stadium
+      - key: WEBAUTHN_RP_ID
+        sync: false
+      - key: WEBAUTHN_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: ACCESS_CODE
+        sync: false
+      - key: JWT_ISSUER
+        value: alpha-team-ptt
+      - key: SESSION_TTL_SECONDS
+        value: "86400"
+      - key: ACTIVATION_TTL_SECONDS
+        value: "600"
+      - key: REDIS_STATUS_TTL_SECONDS
+        value: "120"
+      - key: PTT_LOCK_TTL_SECONDS
+        value: "30"
+      - key: WEBRTC_ICE_SERVERS_JSON
+        value: "[]"
+      - key: RETENTION_INTERVAL_SECONDS
+        value: "3600"
+      - key: STORAGE_MONITOR_INTERVAL_SECONDS
+        value: "21600"
+      - key: RETENTION_BATCH_SIZE
+        value: "1000"
+      - key: SOCKET_LOCATION_MIN_INTERVAL_MS
+        value: "5000"
+      - key: STORAGE_WARNING_BYTES
+        value: "5368709120"
+      - key: AUDIT_RETENTION_DAYS
+        value: "365"
+      - key: INCIDENT_RETENTION_DAYS
+        value: "365"
+      - key: LEGACY_INCIDENT_RETENTION_DAYS
+        value: "180"
+      - key: LOCATION_HISTORY_RETENTION_DAYS
+        value: "30"
+      - key: WELLBEING_RETENTION_DAYS
+        value: "90"
+      - key: NOTIFICATION_RETENTION_DAYS
+        value: "90"
+      - key: SCAN_RETENTION_DAYS
+        value: "180"
+      - key: ACTIVATION_TOKEN_RETENTION_DAYS
+        value: "7"
+      - key: PUSH_SUBSCRIPTION_RETENTION_DAYS
+        value: "180"

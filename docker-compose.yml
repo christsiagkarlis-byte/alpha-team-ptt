@@ -1,37 +1,46 @@
 services:
   alpha-db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     container_name: alpha-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth=scram-sha-256
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database.sql:/docker-entrypoint-initdb.d/001_database.sql:ro
+    secrets:
+      - postgres_password
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 10s
+    security_opt:
+      - no-new-privileges:true
     networks:
       - alpha-internal
 
   alpha-cache:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: alpha-cache
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    command: ["/bin/sh", "-ec", "exec redis-server --appendonly yes --save 60 1 --requirepass \"$$(cat /run/secrets/redis_password)\""]
     volumes:
       - redis_data:/data
+    secrets:
+      - redis_password
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$(cat /run/secrets/redis_password)\" ping | grep -qx PONG"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 5s
+    security_opt:
+      - no-new-privileges:true
     networks:
       - alpha-internal
 
@@ -39,9 +48,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: team-stadium:local
     container_name: alpha-app
     restart: unless-stopped
     init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m
+    pids_limit: 256
+    mem_limit: 512m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       alpha-db:
         condition: service_healthy
@@ -50,20 +69,78 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER must be set in .env}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@alpha-db:5432/${POSTGRES_DB:?POSTGRES_DB must be set in .env}
-      REDIS_URL: redis://alpha-cache:6379
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
-      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY must be set in .env}
+      PGHOST: alpha-db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      PGPASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: alpha-cache
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      ADMIN_API_KEY_FILE: /run/secrets/admin_api_key
+      ACCESS_CODE_FILE: /run/secrets/access_code
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-86400}
       JWT_ISSUER: ${JWT_ISSUER:-alpha-team-ptt}
       ACTIVATION_TTL_SECONDS: ${ACTIVATION_TTL_SECONDS:-600}
       REDIS_STATUS_TTL_SECONDS: ${REDIS_STATUS_TTL_SECONDS:-120}
       PTT_LOCK_TTL_SECONDS: ${PTT_LOCK_TTL_SECONDS:-30}
-      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be the public HTTPS origin}
+      TRUST_PROXY: "true"
+      WEBRTC_ICE_SERVERS_JSON: ${WEBRTC_ICE_SERVERS_JSON:-[]}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Team Stadium}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?WEBAUTHN_RP_ID must be the public hostname}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:?WEBAUTHN_ORIGIN must be the public HTTPS origin}
+      SOS_ESCALATION_FIRST_SECONDS: ${SOS_ESCALATION_FIRST_SECONDS:-30}
+      SOS_ESCALATION_SECOND_SECONDS: ${SOS_ESCALATION_SECOND_SECONDS:-120}
+      WELLBEING_STALE_SECONDS: ${WELLBEING_STALE_SECONDS:-1800}
+      ADMIN_RATE_LIMIT_WINDOW_SECONDS: ${ADMIN_RATE_LIMIT_WINDOW_SECONDS:-60}
+      ADMIN_RATE_LIMIT_MAX: ${ADMIN_RATE_LIMIT_MAX:-20}
+      SOCKET_CONNECTION_LIMIT: ${SOCKET_CONNECTION_LIMIT:-30}
+      SOCKET_EVENT_WINDOW_SECONDS: ${SOCKET_EVENT_WINDOW_SECONDS:-60}
+      SOCKET_EVENT_LIMIT: ${SOCKET_EVENT_LIMIT:-180}
+      SOCKET_LOCATION_MIN_INTERVAL_MS: ${SOCKET_LOCATION_MIN_INTERVAL_MS:-5000}
+      SOCKET_LOCATION_LIMIT: ${SOCKET_LOCATION_LIMIT:-24}
+      SOCKET_INCIDENT_LIMIT: ${SOCKET_INCIDENT_LIMIT:-8}
+      SOCKET_SIGNAL_LIMIT: ${SOCKET_SIGNAL_LIMIT:-90}
+      SOCKET_PTT_START_LIMIT: ${SOCKET_PTT_START_LIMIT:-24}
+      RETENTION_INTERVAL_SECONDS: ${RETENTION_INTERVAL_SECONDS:-3600}
+      RETENTION_BATCH_SIZE: ${RETENTION_BATCH_SIZE:-1000}
+      STORAGE_MONITOR_INTERVAL_SECONDS: ${STORAGE_MONITOR_INTERVAL_SECONDS:-21600}
+      STORAGE_WARNING_BYTES: ${STORAGE_WARNING_BYTES:-5368709120}
+      AUDIT_RETENTION_DAYS: ${AUDIT_RETENTION_DAYS:-365}
+      INCIDENT_RETENTION_DAYS: ${INCIDENT_RETENTION_DAYS:-365}
+      LEGACY_INCIDENT_RETENTION_DAYS: ${LEGACY_INCIDENT_RETENTION_DAYS:-180}
+      LOCATION_HISTORY_RETENTION_DAYS: ${LOCATION_HISTORY_RETENTION_DAYS:-30}
+      WELLBEING_RETENTION_DAYS: ${WELLBEING_RETENTION_DAYS:-90}
+      NOTIFICATION_RETENTION_DAYS: ${NOTIFICATION_RETENTION_DAYS:-90}
+      SCAN_RETENTION_DAYS: ${SCAN_RETENTION_DAYS:-180}
+      ACTIVATION_TOKEN_RETENTION_DAYS: ${ACTIVATION_TOKEN_RETENTION_DAYS:-7}
+      PUSH_SUBSCRIPTION_RETENTION_DAYS: ${PUSH_SUBSCRIPTION_RETENTION_DAYS:-180}
       PGSSL: "false"
+    secrets:
+      - postgres_password
+      - redis_password
+      - jwt_secret
+      - admin_api_key
+      - access_code
+    # Bind only to loopback; terminate public TLS/WSS at the reverse proxy.
     ports:
-      - "${PORT:-3000}:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
     networks:
       - alpha-internal
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?POSTGRES_PASSWORD_FILE must point to a secret file}
+  redis_password:
+    file: ${REDIS_PASSWORD_FILE:?REDIS_PASSWORD_FILE must point to a secret file}
+  jwt_secret:
+    file: ${JWT_SECRET_FILE:?JWT_SECRET_FILE must point to a secret file}
+  admin_api_key:
+    file: ${ADMIN_API_KEY_FILE:?ADMIN_API_KEY_FILE must point to a secret file}
+  access_code:
+    file: ${ACCESS_CODE_FILE:?ACCESS_CODE_FILE must point to a secret file}
 
 volumes:
   postgres_data:
