@@ -1,269 +1,189 @@
 (() => {
   'use strict';
-
-  const PROFILE_NAMES = [
-    'ALFA', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'India', 'Juliet',
-    'Kilo', 'Lima', 'Mike', 'November', 'Oscar', 'Papa', 'Romeo', 'Quadec', 'Sierra', 'Tango',
-    'Uniform', 'Victor', 'Whisky', 'X-ray', 'Yankee', 'Zulu', 'Sentinel', 'Patrol', 'Response',
-    'Guardian', 'Control'
-  ];
-
-  const usernameInput = document.querySelector('#usernameInput');
-  const hardwareUuidInput = document.querySelector('#hardwareUuidInput');
-  const connectButton = document.querySelector('#connectButton');
-  const connectionBadge = document.querySelector('#connectionBadge');
-  const connectionText = document.querySelector('#connectionText');
-  const connectionMessage = document.querySelector('#connectionMessage');
-  const identityState = document.querySelector('#identityState');
-  const channelInput = document.querySelector('#channelInput');
-  const pttButton = document.querySelector('#pttButton');
-  const pttLabel = document.querySelector('#pttLabel');
-  const pttHint = document.querySelector('#pttHint');
-  const transmitReadout = document.querySelector('#transmitReadout');
-  const directoryGrid = document.querySelector('#directoryGrid');
-  const onlineCount = document.querySelector('#onlineCount');
-  const alertsLog = document.querySelector('#alertsLog');
-
-  const profiles = new Map(PROFILE_NAMES.map((username) => [username, {
-    username,
-    role: username === 'ALFA' ? 'leader' : username === 'Control' ? 'admin' : 'user',
-    status: 'offline',
-    transmitting: false
-  }]));
-
-  let socket = null;
-  let connected = false;
-  let pressed = false;
-  let overrideActive = false;
-  let overrideTimer = null;
-
-  PROFILE_NAMES.forEach((username) => {
-    const option = document.createElement('option');
-    option.value = username;
-    option.textContent = username;
-    usernameInput.appendChild(option);
-  });
-
-  const savedUsername = localStorage.getItem('alpha_ptt_username');
-  const savedHardwareUuid = localStorage.getItem('alpha_ptt_hardware_uuid');
-  if (PROFILE_NAMES.includes(savedUsername)) usernameInput.value = savedUsername;
-  if (savedHardwareUuid) hardwareUuidInput.value = savedHardwareUuid;
-
-  function setConnectionState(isConnected, message) {
-    connected = isConnected;
-    connectionBadge.classList.toggle('connected', isConnected);
-    connectionBadge.classList.toggle('disconnected', !isConnected);
-    connectionText.textContent = isConnected ? 'Connected' : 'Disconnected';
-    identityState.textContent = isConnected ? 'ONLINE' : 'OFFLINE';
-    identityState.style.color = isConnected ? 'var(--green)' : '';
-    identityState.style.borderColor = isConnected ? 'var(--green-dim)' : '';
-    pttButton.disabled = !isConnected || overrideActive;
-    if (!isConnected) {
-      pressed = false;
-      setPttVisual(false);
-    }
-    connectionMessage.textContent = message;
+  const PROFILE_NAMES = ['ALFA','Bravo','Charlie','Delta','Echo','Foxtrot','Golf','Hotel','India','Juliet','Kilo','Lima','Mike','November','Oscar','Papa','Romeo','Quadec','Sierra','Tango','Uniform','Victor','Whisky','X-ray','Yankee','Zulu','Sentinel','Patrol','Response','Guardian','Control'];
+  const $ = (id) => document.querySelector(`#${id}`);
+  const usernameInput = $('usernameInput'), hardwareUuidInput = $('hardwareUuidInput'), connectButton = $('connectButton');
+  const connectionBadge = $('connectionBadge'), connectionText = $('connectionText'), connectionMessage = $('connectionMessage'), identityState = $('identityState'), deviceInstallStep = $('deviceInstallStep');
+  const channelInput = $('channelInput'), pttButton = $('pttButton'), pttLabel = $('pttLabel'), pttHint = $('pttHint'), transmitReadout = $('transmitReadout');
+  const directoryGrid = $('directoryGrid'), onlineCount = $('onlineCount'), alertsLog = $('alertsLog');
+  const locationPanel = $('locationPanel'), locationSharingToggle = $('locationSharingToggle'), alfaLocationMenu = $('alfaLocationMenu'), locationMapEl = $('locationMap'), locationList = $('locationList'), locationCount = $('locationCount');
+  const alarmToggleButton = $('alarmToggleButton'), alarmStatus = $('alarmStatus');
+  const incidentPanel = $('incidentPanel'), incidentCodeInput = $('incidentCodeInput'), incidentGpsToggle = $('incidentGpsToggle'), sendIncidentButton = $('sendIncidentButton'), incidentMessage = $('incidentMessage');
+  const helpPanel = $('helpPanel'), helpAlfaSection = $('helpAlfaSection'), helpIncidentCodes = $('helpIncidentCodes');
+  const authPanel = $('authPanel'), accessCodeInput = $('accessCodeInput'), verifyCodeButton = $('verifyCodeButton'), authMessage = $('authMessage');
+  const pinInput = $('pinInput'), pinConfirmInput = $('pinConfirmInput'), authSubmitButton = $('authSubmitButton'), authMode = $('authMode');
+  const resetMemberButton = $('resetMemberButton'), resetMemberInput = $('resetMemberInput');
+  const profiles = new Map(PROFILE_NAMES.map((username) => [username, { username, role: username === 'ALFA' ? 'leader' : username === 'Control' ? 'admin' : 'user', status: 'offline', transmitting: false }]));
+  let socket = null, connected = false, pressed = false, overrideActive = false, overrideTimer = null, sessionToken = localStorage.getItem('alpha_ptt_session') || '', gateToken = '';
+  const audioStatus = $('audioStatus');
+  const webrtcPeers = new Map(), peerDirectory = new Map();
+  let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  let localAudioStream = null;
+  let locationWatchId = null, lastLocationSentAt = 0, map = null;
+  const locationMarkers = new Map(), sharedLocations = new Map();
+  let incidentCodesLoaded = false, alarmEnabled = false, alarmAudioContext = null;
+  const criticalIncidentCodes = new Set(['EVACUATION', '0-01', '0-02', '0-05', '0-11', '0-13', '0-15', '0-21', '0-22', '0-23', '0-50', '0-70', '0-80', '0-100', '0-166', '0-199', 'MEDICAL_EMERGENCY', 'LOSS_OF_CONSCIOUSNESS', 'FIRE_OR_SMOKE', 'HAZARDOUS_LEAK', 'EMERGENCY_EXIT_BREACH', 'MISSING_CHILD_OR_VULNERABLE_PERSON', 'AGGRESSIVE_BEHAVIOR_OR_THREAT', 'SUSPICIOUS_PACKAGE']);
+  const deviceId = localStorage.getItem('alpha_ptt_device') || crypto.randomUUID(); localStorage.setItem('alpha_ptt_device', deviceId); hardwareUuidInput.value = deviceId; hardwareUuidInput.readOnly = true;
+  PROFILE_NAMES.forEach((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; usernameInput.appendChild(option); });
+  usernameInput.value = localStorage.getItem('alpha_ptt_username') || '';
+  usernameInput.addEventListener('change', () => setUiRole(usernameInput.value === 'ALFA' ? 'leader' : 'user', usernameInput.value));
+  if (usernameInput.value) setUiRole(usernameInput.value === 'ALFA' ? 'leader' : 'user', usernameInput.value);
+  function message(text, error = false) { authMessage.textContent = text; authMessage.classList.toggle('error', error); }
+  function api(path, body) { return fetch(path, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body) }).then(async (r) => { const data = await r.json().catch(() => ({})); if (!r.ok) throw new Error(data.error || 'Η ενέργεια απέτυχε'); return data; }); }
+  function setConnectionState(ok, text) { connected = ok; connectionBadge.classList.toggle('connected', ok); connectionBadge.classList.toggle('disconnected', !ok); connectionText.textContent = ok ? 'Connected' : 'Disconnected'; identityState.textContent = ok ? 'ONLINE' : 'OFFLINE'; pttButton.disabled = !ok || overrideActive; if (!ok) { pressed = false; setPttVisual(false); } connectionMessage.textContent = text; }
+  function setUiRole(role, username) { const isAlfa = username === 'ALFA' && role === 'leader'; document.body.classList.toggle('alfa-mode', isAlfa); document.body.classList.toggle('guard-mode', !isAlfa); document.body.dataset.userRole = isAlfa ? 'alfa' : 'guard'; }
+  function setPttVisual(active) { pttButton.classList.toggle('is-pressed', active); pttButton.classList.toggle('override', overrideActive); pttLabel.textContent = overrideActive ? 'ALFA OVERRIDE ACTIVE' : active ? 'TRANSMITTING' : 'PUSH TO TALK'; pttHint.textContent = overrideActive ? 'CHANNEL LOCKED' : active ? 'RELEASE TO STOP' : connected ? 'HOLD TO TRANSMIT' : 'CONNECT DEVICE FIRST'; transmitReadout.textContent = overrideActive ? 'PRIORITY TRANSMISSION' : active ? 'OUTBOUND VOICE ACTIVE' : connected ? 'CHANNEL READY' : 'CHANNEL OFFLINE'; }
+  function setAudioStatus(text, kind = '') { if (!audioStatus) return; audioStatus.textContent = text; audioStatus.className = `audio-status ${kind}`; }
+  function removeRemoteAudio(peerId) { document.querySelector(`audio[data-webrtc-peer="${CSS.escape(peerId)}"]`)?.remove(); }
+  function closeWebRtcPeer(peerId) { const pc = webrtcPeers.get(peerId); if (pc) { pc.close(); webrtcPeers.delete(peerId); } removeRemoteAudio(peerId); }
+  function closeAllWebRtcPeers() { [...webrtcPeers.keys()].forEach(closeWebRtcPeer); if (localAudioStream) { localAudioStream.getTracks().forEach((track) => track.stop()); localAudioStream = null; } }
+  function createWebRtcPeer(peerId, initiator = false) {
+    if (!peerId || peerId === socket?.id) return null;
+    const existing = webrtcPeers.get(peerId); if (existing) return existing;
+    const pc = new RTCPeerConnection({ iceServers });
+    webrtcPeers.set(peerId, pc);
+    if (localAudioStream) localAudioStream.getTracks().forEach((track) => pc.addTrack(track, localAudioStream));
+    pc.onicecandidate = (event) => { if (event.candidate) socket?.emit('webrtc_ice_candidate', { target_socket_id: peerId, candidate: event.candidate }); };
+    pc.ontrack = (event) => { let audio = document.querySelector(`audio[data-webrtc-peer="${CSS.escape(peerId)}"]`); if (!audio) { audio = document.createElement('audio'); audio.dataset.webrtcPeer = peerId; audio.autoplay = true; audio.playsInline = true; audio.setAttribute('aria-label', `Secure voice from ${peerDirectory.get(peerId)?.username || 'operator'}`); audio.style.display = 'none'; document.body.appendChild(audio); } audio.srcObject = event.streams[0]; setAudioStatus(`SECURE VOICE LINK · ${peerDirectory.get(peerId)?.username || 'OPERATOR'}`, 'active'); };
+    pc.onconnectionstatechange = () => { if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) closeWebRtcPeer(peerId); };
+    if (initiator) pc.createOffer().then((offer) => pc.setLocalDescription(offer).then(() => socket?.emit('webrtc_offer', { target_socket_id: peerId, description: pc.localDescription }))).catch(() => setAudioStatus('Voice negotiation failed.', 'error'));
+    return pc;
   }
-
-  function setPttVisual(active) {
-    pttButton.classList.toggle('is-pressed', active);
-    pttButton.classList.toggle('override', overrideActive);
-    if (overrideActive) {
-      pttLabel.textContent = 'ALFA OVERRIDE ACTIVE';
-      pttHint.textContent = 'CHANNEL LOCKED';
-      transmitReadout.textContent = 'PRIORITY TRANSMISSION';
-    } else if (active) {
-      pttLabel.textContent = 'TRANSMITTING';
-      pttHint.textContent = 'RELEASE TO STOP';
-      transmitReadout.textContent = 'OUTBOUND VOICE ACTIVE';
-    } else {
-      pttLabel.textContent = 'PUSH TO TALK';
-      pttHint.textContent = connected ? 'HOLD TO TRANSMIT' : 'CONNECT DEVICE FIRST';
-      transmitReadout.textContent = connected ? 'CHANNEL READY' : 'CHANNEL OFFLINE';
-    }
+  async function startVoiceTransmission() {
+    if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) throw new Error('Ο browser δεν υποστηρίζει secure voice audio.');
+    localAudioStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+    setAudioStatus('MICROPHONE ACTIVE · SECURE VOICE NEGOTIATION', 'active');
+    peerDirectory.forEach((_, peerId) => createWebRtcPeer(peerId, true));
   }
-
-  function setOverrideState(active, duration = 0) {
-    overrideActive = active;
-    clearTimeout(overrideTimer);
-    if (active && duration > 0) overrideTimer = setTimeout(() => setOverrideState(false), duration);
-    pttButton.disabled = !connected || active;
-    setPttVisual(false);
+  async function loadWebRtcConfig() { try { const response = await fetch('/api/webrtc/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_token: sessionToken }) }); if (response.ok) { const data = await response.json(); if (Array.isArray(data.ice_servers) && data.ice_servers.length) iceServers = data.ice_servers; } } catch (_) {} }
+  function stopVoiceTransmission() { closeAllWebRtcPeers(); setAudioStatus('Secure voice audio is ready after connection.'); }
+  function setOverrideState(active, duration = 0) { overrideActive = active; clearTimeout(overrideTimer); if (active && duration) overrideTimer = setTimeout(() => setOverrideState(false), duration); pttButton.disabled = !connected || active; setPttVisual(false); }
+  function renderDirectory() { directoryGrid.replaceChildren(); let online = 0; profiles.forEach((p) => { if (p.status === 'online') online++; const card = document.createElement('article'); card.className = `profile-card ${p.status === 'online' ? 'online' : ''} ${p.transmitting ? 'transmitting' : ''} ${p.role === 'leader' ? 'leader' : ''}`; const avatar = document.createElement('span'); avatar.className = 'profile-avatar'; avatar.textContent = p.role === 'leader' ? '★' : p.username.slice(0,2).toUpperCase(); const copy = document.createElement('div'); copy.className = 'profile-copy'; const name = document.createElement('div'); name.className = 'profile-name'; name.textContent = p.username; const role = document.createElement('div'); role.className = 'profile-role'; role.textContent = p.role === 'leader' ? 'TEAM LEADER' : p.role === 'admin' ? 'OPERATIONS CONTROL' : p.status.toUpperCase(); copy.append(name, role); const status = document.createElement('span'); status.className = 'profile-status'; card.append(avatar, copy, status); directoryGrid.appendChild(card); }); onlineCount.textContent = `${online} / ${PROFILE_NAMES.length} ONLINE`; }
+  function applyPresence(list) { if (!Array.isArray(list)) return; list.forEach((item) => { const p = profiles.get(item.username); if (!p) return; p.role = item.role || p.role; p.status = item.status === 'online' ? 'online' : 'offline'; p.transmitting = Boolean(item.current_channel); }); renderDirectory(); }
+  function addAlert(a) { const empty = alertsLog.querySelector('.empty-alert'); if (empty) empty.remove(); const entry = document.createElement('article'); entry.className = `alert-entry ${a.critical ? 'incident-entry-critical' : ''}`; entry.textContent = `${new Date(a.issued_at || Date.now()).toLocaleTimeString()} — ${a.message || 'Emergency alert'}`; alertsLog.prepend(entry); }
+  function formatLocationTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'άγνωστη ώρα' : date.toLocaleString('el-GR'); }
+  function initLocationMap() { if (map || !window.L || !locationMapEl) return; map = L.map(locationMapEl).setView([38.2466, 21.7346], 6); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map); }
+  function renderLocations() {
+    if (!alfaLocationMenu.hidden) initLocationMap();
+    locationList.replaceChildren();
+    locationCount.textContent = `${sharedLocations.size} ΘΕΣΕΙΣ`;
+    if (!sharedLocations.size) { const empty = document.createElement('p'); empty.className = 'empty-alert'; empty.textContent = 'Δεν υπάρχουν κοινοποιημένες θέσεις.'; locationList.appendChild(empty); return; }
+    const bounds = [];
+    sharedLocations.forEach((item) => {
+      const point = [item.latitude, item.longitude]; bounds.push(point);
+      if (map) { let marker = locationMarkers.get(item.username); if (!marker) { marker = L.marker(point).addTo(map); locationMarkers.set(item.username, marker); } else marker.setLatLng(point); const popup = document.createElement('div'); const name = document.createElement('strong'); name.textContent = item.username; const accuracy = document.createElement('div'); accuracy.textContent = `Ακρίβεια: ${item.accuracy_m ? `${Math.round(item.accuracy_m)} m` : '—'}`; const updated = document.createElement('div'); updated.textContent = `Τελευταία ενημέρωση: ${formatLocationTime(item.captured_at)}`; popup.append(name, accuracy, updated); marker.bindPopup(popup); }
+      const entry = document.createElement('div'); entry.className = 'location-entry'; const name = document.createElement('strong'); name.textContent = item.username; const details = document.createElement('span'); details.textContent = `${formatLocationTime(item.captured_at)}${item.accuracy_m ? ` · ±${Math.round(item.accuracy_m)}m` : ''}`; entry.append(name, details); locationList.appendChild(entry);
+    });
+    locationMarkers.forEach((marker, username) => { if (!sharedLocations.has(username)) { marker.remove(); locationMarkers.delete(username); } });
+    if (map && bounds.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
   }
-
-  function renderDirectory() {
-    directoryGrid.replaceChildren();
-    let online = 0;
-    profiles.forEach((profile) => {
-      if (profile.status === 'online') online += 1;
-      const card = document.createElement('article');
-      card.className = `profile-card ${profile.status === 'online' ? 'online' : ''} ${profile.transmitting ? 'transmitting' : ''} ${profile.role === 'leader' ? 'leader' : ''}`;
-      card.dataset.username = profile.username;
-      const avatar = document.createElement('span');
-      avatar.className = 'profile-avatar';
-      avatar.textContent = profile.role === 'leader' ? '★' : profile.username.slice(0, 2).toUpperCase();
-      const copy = document.createElement('div');
-      copy.className = 'profile-copy';
-      const name = document.createElement('div');
-      name.className = 'profile-name';
-      name.textContent = profile.username;
-      const role = document.createElement('div');
-      role.className = 'profile-role';
-      role.textContent = profile.role === 'leader' ? 'TEAM LEADER' : profile.role === 'admin' ? 'OPERATIONS CONTROL' : profile.status.toUpperCase();
-      copy.append(name, role);
-      const status = document.createElement('span');
-      status.className = 'profile-status';
-      status.title = profile.transmitting ? 'Transmitting' : profile.status;
-      card.append(avatar, copy, status);
-      directoryGrid.appendChild(card);
-    });
-    onlineCount.textContent = `${online} / 31 ONLINE`;
+  function updateLocationSharing(enabled) {
+    if (!socket || !connected) { locationSharingToggle.checked = false; return; }
+    if (!enabled) { if (locationWatchId !== null) navigator.geolocation.clearWatch(locationWatchId); locationWatchId = null; socket.emit('location_stop'); return; }
+    if (!navigator.geolocation) { locationSharingToggle.checked = false; return message('Ο browser δεν υποστηρίζει GPS.', true); }
+    locationWatchId = navigator.geolocation.watchPosition((position) => { const now = Date.now(); if (now - lastLocationSentAt < 15000) return; lastLocationSentAt = now; socket.emit('location_update', { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, speed_mps: position.coords.speed, heading_deg: position.coords.heading }); }, () => { locationSharingToggle.checked = false; message('Δεν δόθηκε άδεια GPS ή η θέση δεν είναι διαθέσιμη.', true); }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 15000 });
   }
-
-  function applyPresence(list) {
-    if (!Array.isArray(list)) return;
-    list.forEach((item) => {
-      const profile = profiles.get(item.username);
-      if (!profile) return;
-      profile.role = item.role || profile.role;
-      profile.status = item.status === 'online' ? 'online' : 'offline';
-      profile.transmitting = Boolean(item.current_channel);
-    });
-    renderDirectory();
-  }
-
-  function markTransmitting(username, active) {
-    const profile = profiles.get(username);
-    if (profile) {
-      profile.transmitting = active;
-      if (active) profile.status = 'online';
-      renderDirectory();
-    }
-  }
-
-  function addAlert(alert) {
-    const empty = alertsLog.querySelector('.empty-alert');
-    if (empty) empty.remove();
-    const entry = document.createElement('article');
-    entry.className = 'alert-entry';
-    const time = document.createElement('div');
-    time.className = 'alert-time';
-    time.textContent = new Date(alert.issued_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const message = document.createElement('div');
-    message.className = 'alert-message';
-    message.textContent = alert.message || 'Emergency broadcast received.';
-    entry.append(time, message);
-    alertsLog.prepend(entry);
-    while (alertsLog.children.length > 8) alertsLog.lastElementChild.remove();
-  }
-
-  function disconnectSocket() {
-    if (socket) {
-      socket.disconnect();
-      socket = null;
-    }
-    setConnectionState(false, 'Device disconnected. Enter credentials to reconnect.');
-  }
-
-  function connectSocket() {
-    const username = usernameInput.value;
-    const hardwareUuid = hardwareUuidInput.value.trim();
-    if (!PROFILE_NAMES.includes(username)) {
-      setConnectionState(false, 'Select one of the 31 predefined identities.');
-      return;
-    }
-    if (hardwareUuid.length < 8) {
-      setConnectionState(false, 'A valid bound hardware UUID is required.');
-      hardwareUuidInput.focus();
-      return;
-    }
-    disconnectSocket();
-    localStorage.setItem('alpha_ptt_username', username);
-    localStorage.setItem('alpha_ptt_hardware_uuid', hardwareUuid);
-    socket = io({
-      auth: { username, hardware_uuid: hardwareUuid },
-      transports: ['websocket', 'polling'],
-      autoConnect: false
-    });
-    socket.on('connect', () => {
-      setConnectionState(true, `Secure link established for ${username}.`);
-      connectButton.textContent = 'DISCONNECT DEVICE';
-    });
-    socket.on('disconnect', (reason) => {
-      setConnectionState(false, `Connection closed: ${reason}.`);
-      connectButton.textContent = 'CONNECT DEVICE';
-    });
-    socket.on('connect_error', (error) => {
-      setConnectionState(false, error.message || 'Secure link rejected.');
-      connectButton.textContent = 'CONNECT DEVICE';
-    });
-    socket.on('ptt_ready', (data) => {
-      if (data?.default_channel_id) channelInput.value = data.default_channel_id;
-    });
-    socket.on('presence_snapshot', (data) => applyPresence(data?.profiles));
-    socket.on('presence_update', (data) => applyPresence(data?.profiles));
-    socket.on('ptt_started', (data) => {
-      markTransmitting(data.username, true);
-      if (data.override) setOverrideState(true);
-    });
-    socket.on('ptt_stopped', (data) => {
-      markTransmitting(data.username, false);
-      if (data.username === 'ALFA' || data.reason === 'stopped') setOverrideState(false);
-    });
-    socket.on('leader_transmitting', (data) => {
-      markTransmitting('ALFA', true);
-      setOverrideState(true, 30000);
-      transmitReadout.textContent = `${data.interrupted_username || 'CHANNEL'} MUTED BY ALFA`;
-    });
-    socket.on('ptt_muted_by_leader', () => {
-      pressed = false;
-      setOverrideState(true, 30000);
-      connectionMessage.textContent = 'Your transmission was overridden by ALFA priority traffic.';
-    });
-    socket.on('ptt_denied', (data) => {
-      pressed = false;
-      setPttVisual(false);
-      connectionMessage.textContent = `Channel busy: ${data.active_username || 'another operator'} is transmitting.`;
-    });
-    socket.on('account_disabled', (data) => {
-      pressed = false;
-      setConnectionState(false, data?.reason || 'Device access disabled by command.');
-      connectButton.textContent = 'CONNECT DEVICE';
-    });
-    socket.on('emergency_broadcast_alert', addAlert);
-    socket.connect();
-  }
-
-  function startPtt(event) {
-    event.preventDefault();
-    if (!connected || overrideActive || pressed || !socket) return;
-    pressed = true;
-    setPttVisual(true);
-    socket.emit('ptt_start', { username: usernameInput.value, channel_id: channelInput.value }, (ack) => {
-      if (!ack?.ok) {
-        pressed = false;
-        setPttVisual(false);
-        connectionMessage.textContent = ack?.error || 'Transmission request denied.';
-      }
-    });
-  }
-
-  function stopPtt(event) {
-    if (event) event.preventDefault();
-    if (!pressed || !socket || !connected) return;
-    pressed = false;
-    setPttVisual(false);
-    socket.emit('ptt_stop', { channel_id: channelInput.value });
-  }
-
-  connectButton.addEventListener('click', () => {
-    if (connected) disconnectSocket();
-    else connectSocket();
-  });
-  pttButton.addEventListener('pointerdown', startPtt);
-  pttButton.addEventListener('pointerup', stopPtt);
-  pttButton.addEventListener('pointercancel', stopPtt);
-  pttButton.addEventListener('pointerleave', (event) => { if (pressed && event.buttons === 0) stopPtt(event); });
-  window.addEventListener('blur', () => stopPtt());
+  async function loadIncidentCodes() { try { const response = await fetch('/incident-codes.json', { cache: 'no-store' }); const codes = await response.json(); helpIncidentCodes.replaceChildren(); codes.forEach((item) => { const option = document.createElement('option'); option.value = item.code; option.textContent = item.label; incidentCodeInput.appendChild(option); const codeItem = document.createElement('li'); codeItem.textContent = item.label; helpIncidentCodes.appendChild(codeItem); }); applyIncidentPermissions(usernameInput.value); incidentCodesLoaded = true; sendIncidentButton.disabled = false; } catch (_) { incidentMessage.textContent = 'Δεν φορτώθηκε το μενού κωδικών.'; } }
+  function getCurrentIncidentLocation() { return new Promise((resolve) => { if (!incidentGpsToggle.checked || !navigator.geolocation) return resolve(null); navigator.geolocation.getCurrentPosition((position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy }), () => resolve(null), { enableHighAccuracy: true, maximumAge: 10000, timeout: 12000 }); }); }
+  async function sendIncident() { const code = incidentCodeInput.value; if (!code || !socket || !connected) return; sendIncidentButton.disabled = true; incidentMessage.textContent = 'Αποστολή συμβάντος στον ALFA…'; const location = await getCurrentIncidentLocation(); socket.emit('incident_report', { code, location }, (reply) => { sendIncidentButton.disabled = !incidentCodesLoaded; if (reply?.ok) { incidentMessage.textContent = 'Το συμβάν εστάλη στον ALFA.'; incidentCodeInput.value = ''; } else incidentMessage.textContent = reply?.error || 'Η αποστολή απέτυχε.'; }); }
+  async function enableAlarmSound() { try { alarmAudioContext = alarmAudioContext || new (window.AudioContext || window.webkitAudioContext)(); await alarmAudioContext.resume(); alarmEnabled = true; alarmToggleButton.classList.add('enabled'); alarmToggleButton.textContent = 'ALARM ΕΝΕΡΓΟ'; alarmStatus.classList.add('active'); alarmStatus.textContent = 'Ο ήχος alarm είναι ενεργός.'; playAlarmSound(1); } catch (_) { alarmStatus.textContent = 'Ο browser δεν επέτρεψε ήχο alarm.'; } }
+  function playAlarmSound(repeats = 3) { if (!alarmEnabled || !alarmAudioContext) return; const start = alarmAudioContext.currentTime; for (let i = 0; i < repeats; i += 1) { const oscillator = alarmAudioContext.createOscillator(); const gain = alarmAudioContext.createGain(); oscillator.type = 'square'; oscillator.frequency.setValueAtTime(i % 2 ? 660 : 880, start + i * 0.42); gain.gain.setValueAtTime(0.0001, start + i * 0.42); gain.gain.exponentialRampToValueAtTime(0.16, start + i * 0.42 + 0.02); gain.gain.exponentialRampToValueAtTime(0.0001, start + i * 0.42 + 0.28); oscillator.connect(gain).connect(alarmAudioContext.destination); oscillator.start(start + i * 0.42); oscillator.stop(start + i * 0.42 + 0.3); } }
+  function playPriorityAlarm() { if (!alarmAudioContext) { try { alarmAudioContext = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { return; } } alarmAudioContext.resume().then(() => { const start = alarmAudioContext.currentTime; const oscillator = alarmAudioContext.createOscillator(); const gain = alarmAudioContext.createGain(); oscillator.type = 'sawtooth'; oscillator.frequency.setValueAtTime(620, start); gain.gain.setValueAtTime(0.0001, start); for (let i = 0; i < 8; i += 1) { const t = start + i * 0.7; oscillator.frequency.setValueAtTime(i % 2 ? 1180 : 620, t); gain.gain.setValueAtTime(0.0001, t); gain.gain.linearRampToValueAtTime(0.45, t + 0.08); gain.gain.linearRampToValueAtTime(0.0001, t + 0.58); } oscillator.connect(gain).connect(alarmAudioContext.destination); oscillator.start(start); oscillator.stop(start + 5.7); }).catch(() => setAudioStatus('Ενεργοποίησε τον ήχο ALARM για ηχητικές ειδοποιήσεις υψηλής προτεραιότητας.', 'error')); }
+  function applyIncidentPermissions(username) { const evacuation = [...incidentCodeInput.options].find((option) => option.value === 'EVACUATION'); if (evacuation) evacuation.hidden = username !== 'ALFA'; if (username !== 'ALFA' && incidentCodeInput.value === 'EVACUATION') incidentCodeInput.value = ''; }
+  function addIncidentAlert(item) { const entry = { issued_at: item.created_at, critical: item.critical || criticalIncidentCodes.has(item.code), message: `${item.description || 'Συμβάν'} από ${item.username}${item.latitude != null ? ' · GPS διαθέσιμο' : ' · χωρίς GPS'}` }; addAlert(entry); if (item.severity === 'high' || entry.critical) playPriorityAlarm(); if (item.latitude != null && item.longitude != null) { sharedLocations.set(item.username, { username: item.username, role: item.role || 'user', latitude: item.latitude, longitude: item.longitude, accuracy_m: item.accuracy_m, captured_at: item.created_at }); renderLocations(); } }
+  async function authenticate() { const username = usernameInput.value, pin = pinInput.value, confirmation = pinConfirmInput.value; if (!username || pin.length < 4) return message('Επίλεξε username και PIN τουλάχιστον 4 χαρακτήρων.', true); try { const data = authMode.value === 'enroll' ? await api('/api/auth/enroll', { gate_token: gateToken, username, pin, pin_confirmation: confirmation, hardware_uuid: deviceId }) : await api('/api/auth/login', { username, pin, hardware_uuid: deviceId }); sessionToken = data.session_token; localStorage.setItem('alpha_ptt_session', sessionToken); localStorage.setItem('alpha_ptt_username', username); authPanel.hidden = true; deviceInstallStep.hidden = false; deviceInstallStep.querySelector('p').textContent = 'Η συσκευή εγκαταστάθηκε επιτυχώς και είναι έτοιμη για ασφαλή επικοινωνία.'; message(''); connectSocket(); } catch (e) { message(e.message, true); } }
+  verifyCodeButton.addEventListener('click', async () => { try { const data = await api('/api/auth/verify-code', { access_code: accessCodeInput.value }); gateToken = data.gate_token; authMode.disabled = false; pinInput.disabled = false; pinConfirmInput.disabled = authMode.value !== 'login'; authSubmitButton.disabled = false; message('Ο κωδικός επαληθεύτηκε. Συνέχισε με username και PIN.'); } catch (e) { message(e.message, true); } });
+  authMode.addEventListener('change', () => { pinConfirmInput.disabled = authMode.value === 'login'; pinConfirmInput.required = authMode.value === 'enroll'; }); authSubmitButton.addEventListener('click', authenticate);
+  function handleSessionRevocation(d) { closeAllWebRtcPeers(); sessionToken = ''; localStorage.removeItem('alpha_ptt_session'); setConnectionState(false, d?.reason || 'Device session was revoked.'); authPanel.hidden = false; locationPanel.hidden = true; incidentPanel.hidden = true; helpPanel.hidden = true; }
+  function connectSocket() { if (!sessionToken) return; if (socket) socket.disconnect(); socket = io({ auth: { username: usernameInput.value, hardware_uuid: deviceId, session_token: sessionToken }, transports: ['websocket','polling'], autoConnect: false }); socket.on('connect', () => { loadWebRtcConfig(); flushSecurityQueue?.(); setConnectionState(true, `Secure link established for ${usernameInput.value}.`); setAudioStatus('Secure voice audio is ready after connection.'); connectButton.textContent = 'DISCONNECT DEVICE'; locationPanel.hidden = false; incidentPanel.hidden = false; helpPanel.hidden = false; applyIncidentPermissions(usernameInput.value); }); socket.on('disconnect', (r) => { closeAllWebRtcPeers(); setAudioStatus('Voice link closed.'); setConnectionState(false, `Connection closed: ${r}.`); connectButton.textContent = 'CONNECT DEVICE'; if (locationWatchId !== null) navigator.geolocation.clearWatch(locationWatchId); locationWatchId = null; }); socket.on('connect_error', (e) => setConnectionState(false, e.message || 'Secure link rejected.')); socket.on('presence_snapshot', (d) => applyPresence(d?.profiles)); socket.on('presence_update', (d) => applyPresence(d?.profiles)); socket.on('webrtc_peer_list', (d) => { peerDirectory.clear(); (d?.peers || []).forEach((peer) => peerDirectory.set(peer.socket_id, peer)); }); socket.on('webrtc_peer_joined', (peer) => { peerDirectory.set(peer.socket_id, peer); if (pressed) createWebRtcPeer(peer.socket_id, true); }); socket.on('webrtc_offer', async (d) => { try { const pc = createWebRtcPeer(d.from_socket_id, false); await pc.setRemoteDescription(d.description); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); socket.emit('webrtc_answer', { target_socket_id: d.from_socket_id, description: pc.localDescription }); } catch (_) { setAudioStatus('Voice negotiation failed.', 'error'); } }); socket.on('webrtc_answer', async (d) => { try { const pc = webrtcPeers.get(d.from_socket_id); if (pc) await pc.setRemoteDescription(d.description); } catch (_) { setAudioStatus('Voice negotiation failed.', 'error'); } }); socket.on('webrtc_ice_candidate', async (d) => { try { const pc = webrtcPeers.get(d.from_socket_id); if (pc && d.candidate) await pc.addIceCandidate(d.candidate); } catch (_) {} }); socket.on('webrtc_peer_left', (d) => { peerDirectory.delete(d.socket_id); closeWebRtcPeer(d.socket_id); }); socket.on('ptt_ready', (d) => { const isAlfa = d?.username === 'ALFA' && d?.role === 'leader'; alfaLocationMenu.hidden = !isAlfa; helpAlfaSection.hidden = !isAlfa; applyIncidentPermissions(d?.username); if (isAlfa) { initLocationMap(); renderLocations(); } }); socket.on('location_snapshot', (d) => { (d?.locations || []).forEach((item) => sharedLocations.set(item.username, item)); renderLocations(); }); socket.on('location_update', (item) => { sharedLocations.set(item.username, item); renderLocations(); }); socket.on('location_removed', (item) => { sharedLocations.delete(item.username); renderLocations(); }); socket.on('incident_alert', addIncidentAlert); socket.on('evacuation_alert', (item) => { addAlert({ issued_at:item.created_at, critical:true, message:`${item.description} — δόθηκε από ALFA` }); playPriorityAlarm(); }); socket.on('ptt_started', (d) => { const p = profiles.get(d.username); if (p) { p.transmitting = true; p.status = 'online'; renderDirectory(); } if (d.override) setOverrideState(true); }); socket.on('ptt_stopped', (d) => { const p = profiles.get(d.username); if (p) { p.transmitting = false; renderDirectory(); } closeWebRtcPeer(d.socket_id); if (d.username === 'ALFA') setOverrideState(false); }); socket.on('leader_transmitting', (d) => { setOverrideState(true, 30000); transmitReadout.textContent = `${d.interrupted_username || 'CHANNEL'} MUTED BY ALFA`; }); socket.on('ptt_muted_by_leader', () => { stopVoiceTransmission(); setOverrideState(true, 30000); connectionMessage.textContent = 'Your transmission was overridden by ALFA priority traffic.'; }); socket.on('ptt_denied', (d) => { stopVoiceTransmission(); pressed = false; setPttVisual(false); connectionMessage.textContent = `Channel busy: ${d.active_username || 'another operator'}.`; }); socket.on('account_disabled', handleSessionRevocation); socket.on('session_revoked', handleSessionRevocation); socket.on('rate_limited', (d) => { connectionMessage.textContent = `Rate limit: ${d?.event || 'event'}; retry shortly.`; }); socket.on('emergency_broadcast_alert', (item) => { addAlert(item); if (item?.severity === 'critical') playPriorityAlarm(); }); socket.connect(); }
+  connectButton.addEventListener('click', () => { if (connected) { socket?.disconnect(); } else connectSocket(); });
+  function startPtt(e) { e.preventDefault(); if (!connected || overrideActive || pressed) return; pressed = true; setPttVisual(true); socket.emit('ptt_start', { username: usernameInput.value, channel_id: channelInput.value }, async (ack) => { if (!ack?.ok) { pressed = false; setPttVisual(false); connectionMessage.textContent = ack?.error || 'Transmission denied.'; return; } try { await startVoiceTransmission(); } catch (error) { pressed = false; setPttVisual(false); socket.emit('ptt_stop', { channel_id: channelInput.value }); setAudioStatus(error.message || 'Microphone access denied.', 'error'); } }); }
+  function stopPtt(e) { if (e) e.preventDefault(); if (!pressed || !socket) return; pressed = false; stopVoiceTransmission(); setPttVisual(false); socket.emit('ptt_stop', { channel_id: channelInput.value }); }
+  pttButton.addEventListener('pointerdown', startPtt); pttButton.addEventListener('pointerup', stopPtt); pttButton.addEventListener('pointercancel', stopPtt); window.addEventListener('blur', () => stopPtt());
+  resetMemberButton?.addEventListener('click', async () => { try { await api('/api/leader/reset-member', { session_token: sessionToken, username: resetMemberInput.value }); message(`Έγινε reset για ${resetMemberInput.value}.`); } catch (e) { message(e.message, true); } });
+  locationSharingToggle?.addEventListener('change', () => updateLocationSharing(locationSharingToggle.checked));
+  alarmToggleButton?.addEventListener('click', enableAlarmSound);
+  incidentCodeInput?.addEventListener('change', () => { incidentMessage.textContent = incidentCodeInput.value ? 'Έτοιμο για αποστολή στον ALFA.' : 'Ο κωδικός και η θέση θα σταλούν μόνο στον ALFA.'; });
+  sendIncidentButton?.addEventListener('click', sendIncident);
+  loadIncidentCodes();
   renderDirectory();
+  if (sessionToken) { authPanel.hidden = true; connectSocket(); }
+
+  // Security operations client module.
+  const securityOpsPanel = $('securityOpsPanel'), supervisorTools = $('supervisorTools');
+  const sosButton = $('sosButton'), silentSosButton = $('silentSosButton'), sosMessage = $('sosMessage');
+  const securityIncidentList = $('securityIncidentList'), securityIncidentCount = $('securityIncidentCount'), securityReport = $('securityReport');
+  const wellbeingButton = $('wellbeingButton'), wellbeingMessage = $('wellbeingMessage');
+  const wellbeingList = $('wellbeingList'), refreshWellbeingButton = $('refreshWellbeingButton');
+  const emergencyTitle = $('emergencyTitle'), emergencyMessage = $('emergencyMessage'), emergencyStatus = $('emergencyStatus');
+  const activateEmergencyButton = $('activateEmergencyButton'), deactivateEmergencyButton = $('deactivateEmergencyButton'), exportReportButton = $('exportReportButton'), exportPdfButton = $('exportPdfButton'), exportSeverityFilter = $('exportSeverityFilter'), exportDateFrom = $('exportDateFrom'), exportDateTo = $('exportDateTo');
+  const emergencyBanner = $('emergencyBanner'), emergencyBannerTitle = $('emergencyBannerTitle'), emergencyBannerMessage = $('emergencyBannerMessage');
+  let latestDetailedReport = null;
+  function securityApi(path, body = {}) { return api(path, { ...body, session_token: sessionToken }); }
+  async function securityLocation() { return new Promise((resolve) => { if (!navigator.geolocation) return resolve(null); navigator.geolocation.getCurrentPosition((p) => resolve({ latitude:p.coords.latitude, longitude:p.coords.longitude, accuracy_m:p.coords.accuracy }), () => resolve(null), { enableHighAccuracy:true, maximumAge:10000, timeout:10000 }); }); }
+  async function sendWellbeingCheckin() { if (!connected) { wellbeingMessage.textContent = 'Δεν υπάρχει σύνδεση για αποστολή.'; return; } wellbeingButton.disabled = true; wellbeingMessage.textContent = 'Αποστολή επιβεβαίωσης…'; try { const data = await securityApi('/api/security/wellbeing/checkin', { location: await securityLocation() }); wellbeingMessage.textContent = `Επιβεβαιώθηκε στις ${formatLocationTime(data.checkin.created_at)}.`; } catch (e) { wellbeingMessage.textContent = e.message; } finally { wellbeingButton.disabled = false; } }
+  function renderEmptyState(container, text) { if (!container) return; container.replaceChildren(); const empty = document.createElement('p'); empty.className = 'empty-alert'; empty.textContent = text; container.appendChild(empty); }
+  async function loadWellbeingStatus(){if(!wellbeingList)return;try{const data=await securityApi('/api/security/wellbeing/status',{});wellbeingList.replaceChildren();data.users.forEach((item)=>{const row=document.createElement('div');row.className=`wellbeing-row ${item.stale?'stale':''}`;const name=document.createElement('strong');name.textContent=item.username;const status=document.createElement('small');status.textContent=item.created_at?(item.stale?'ΧΩΡΙΣ ΠΡΟΣΦΑΤΟ CHECK-IN':`OK · ${formatLocationTime(item.created_at)}`):'ΧΩΡΙΣ CHECK-IN';row.append(name,status);wellbeingList.appendChild(row);});}catch(e){renderEmptyState(wellbeingList,e.message);}}
+  async function sendSos(silent = false) { if (!connected) return; if (!silent && !window.confirm('Να σταλεί SOS στον επόπτη τώρα;')) return; sosButton.disabled = true; silentSosButton.disabled = true; sosMessage.textContent = 'Αποστολή SOS…'; try { const incident = await securityApi('/api/security/sos', { silent, title: silent ? 'Silent panic' : 'SOS — άμεση βοήθεια', location: await securityLocation() }); sosMessage.textContent = `Το SOS καταγράφηκε ως #${incident.incident.id}. Ο ALFA πρέπει να πατήσει «Έλαβα».`; addAlert({ issued_at: incident.incident.created_at, critical:true, message:`SOS από ${usernameInput.value}` }); } catch (e) { sosMessage.textContent = e.message; } finally { sosButton.disabled = false; silentSosButton.disabled = false; } }
+  function securityIncidentCard(item) { const row = document.createElement('article'); row.className = `security-item ${item.severity === 'critical' ? 'critical' : ''}`; const title = document.createElement('strong'); title.textContent = `#${item.id} · ${item.title}`; const meta = document.createElement('small'); meta.textContent = `${item.severity.toUpperCase()} · ${item.reported_by} · ${formatLocationTime(item.created_at)}${item.escalation_level ? ` · ESCALATION ${item.escalation_level}` : ''}`; const select = document.createElement('select'); ['open','acknowledged','in_progress','resolved','cancelled'].forEach((s) => { const o=document.createElement('option'); o.value=s; o.textContent=s; o.selected=s===item.status; select.appendChild(o); }); select.addEventListener('change', async () => { try { await securityApi('/api/security/incidents/update', { id:item.id, status:select.value }); loadSecurityIncidents(); } catch(e) { select.value=item.status; alert(e.message); } }); row.append(title, meta, select); if ((item.incident_type === 'sos' || item.incident_type === 'panic') && !item.acknowledged_at && item.status !== 'resolved' && item.status !== 'cancelled') { const ack=document.createElement('button'); ack.className='secondary-button'; ack.textContent='ΕΛΑΒΑ / ΑΝΑΛΑΜΒΑΝΩ SOS'; ack.addEventListener('click',async()=>{try{await securityApi('/api/security/sos/acknowledge',{id:item.id});loadSecurityIncidents();}catch(e){alert(e.message);}}); row.appendChild(ack); } if (item.description) { const desc=document.createElement('small'); desc.textContent=item.description; row.appendChild(desc); } return row; }
+  async function loadSecurityIncidents() { try { const data=await securityApi('/api/security/incidents/list', {}); securityIncidentList.replaceChildren(); securityIncidentCount.textContent=data.incidents.length; if(!data.incidents.length){renderEmptyState(securityIncidentList,'Δεν υπάρχουν περιστατικά.');return;} data.incidents.forEach((x)=>securityIncidentList.appendChild(securityIncidentCard(x))); } catch(e) { renderEmptyState(securityIncidentList,e.message); } }
+  async function createSecurityIncident() { const title=$('securityIncidentTitle').value.trim(); if(!title)return; const body={title,description:$('securityIncidentDescription').value,severity:$('securityIncidentSeverity').value,location:await securityLocation()}; if(!connected){await queueSecurityAction('/api/security/incidents/create',body);return;} try { await securityApi('/api/security/incidents/create',body); $('securityIncidentTitle').value='';$('securityIncidentDescription').value=''; alert('Το περιστατικό καταγράφηκε.'); loadSecurityIncidents(); } catch(e){alert(e.message);} }
+  async function loadSecurityReport(){try{const d=await securityApi('/api/security/report/detailed',{});latestDetailedReport=d;const s=d.summary;securityReport.textContent=`24ωρο: ${s.incidents_24h} · SOS 30ημ.: ${s.sos_30d} · ανοικτά: ${s.open_incidents} · κλιμακωμένα SOS: ${s.escalated_sos} · μέση πρώτη απόκριση: ${s.avg_first_response_minutes}′ · stale check-ins: ${s.wellbeing_stale_users}`;}catch(e){securityReport.textContent=e.message;}}
+  function filteredIncidents(){ const severity=exportSeverityFilter?.value||'', from=exportDateFrom?.value?new Date(`${exportDateFrom.value}T00:00:00`):null, to=exportDateTo?.value?new Date(`${exportDateTo.value}T23:59:59.999`):null; return (latestDetailedReport?.recent_incidents||[]).filter((x)=>{const created=new Date(x.created_at); return (!severity||x.severity===severity)&&(!from||created>=from)&&(!to||created<=to);}); }
+  function reportRows(){ const rows=[['Τύπος','ID','Τίτλος','Σοβαρότητα','Κατάσταση','Αναφέρων','Ανάθεση','Δημιουργήθηκε','Acknowledged','Resolved','Escalation']]; filteredIncidents().forEach((x)=>rows.push(['incident',x.id,x.title,x.severity,x.status,x.reported_by,x.assigned_to||'',x.created_at,x.acknowledged_at||'',x.resolved_at||'',x.escalation_level||0])); return rows; }
+  function exportDetailedReport(){ if(!latestDetailedReport){loadSecurityReport();return;} const csv=reportRows().map((r)=>r.map((v)=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n'); const blob=new Blob([`\ufeff${csv}`],{type:'text/csv;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`team-stadium-report-${new Date().toISOString().slice(0,10)}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
+  function exportSecurityPdf(){ if(!latestDetailedReport){loadSecurityReport();return;} const popup=window.open('','_blank','noopener,noreferrer'); if(!popup){phase1Status('Επίτρεψε τα αναδυόμενα παράθυρα για εξαγωγή PDF.',true);return;} const doc=popup.document, selectedRows=reportRows(); doc.title='Team Stadium — Αρχείο συμβάντων'; const style=doc.createElement('style'); style.textContent='@page{size:landscape;margin:12mm}body{font-family:Arial,sans-serif;color:#17221d}h1{font-size:20px;margin:0 0 4px}p{color:#526158;font-size:11px}table{border-collapse:collapse;width:100%;font-size:9px}th,td{border:1px solid #aebbb3;padding:5px;text-align:left;vertical-align:top}th{background:#e4eee8}tr:nth-child(even){background:#f6faf7}'; doc.head.appendChild(style); const heading=doc.createElement('h1'); heading.textContent='Team Stadium — Αρχείο συμβάντων'; const details=doc.createElement('p'); details.textContent=`Δημιουργήθηκε: ${new Date().toLocaleString('el-GR')} · Φίλτρα: σοβαρότητα ${exportSeverityFilter?.selectedOptions[0]?.textContent||'Όλες'}, από ${exportDateFrom?.value||'—'} έως ${exportDateTo?.value||'—'} · Οι εσωτερικοί αριθμητικοί κωδικοί δεν εμφανίζονται.`; const table=doc.createElement('table'), thead=doc.createElement('thead'), headRow=doc.createElement('tr'), tbody=doc.createElement('tbody'); selectedRows[0].forEach((value)=>{const cell=doc.createElement('th');cell.textContent=value;headRow.appendChild(cell);}); thead.appendChild(headRow); selectedRows.slice(1).forEach((row)=>{const tr=doc.createElement('tr');row.forEach((value)=>{const cell=doc.createElement('td');cell.textContent=String(value);tr.appendChild(cell);});tbody.appendChild(tr);}); if(!tbody.children.length){const tr=doc.createElement('tr'),cell=doc.createElement('td');cell.colSpan=selectedRows[0].length;cell.textContent='Δεν υπάρχουν συμβάντα με τα επιλεγμένα φίλτρα.';tr.appendChild(cell);tbody.appendChild(tr);} table.append(thead,tbody); doc.body.replaceChildren(heading,details,table); popup.focus(); popup.setTimeout(()=>popup.print(),0); }
+  async function loadEmergencyStatus(){try{const d=await securityApi('/api/security/emergency/status',{}); setEmergencyStatus(d.active);}catch(_){}}
+  function setEmergencyStatus(mode){ if(!emergencyStatus)return; emergencyStatus.textContent=mode?`ΕΝΕΡΓΟ: ${mode.title} — ${mode.message}`:'Δεν υπάρχει ενεργό Emergency Mode.'; emergencyStatus.classList.toggle('active',Boolean(mode)); }
+  function renderEmergencyBanner(mode){ if(!emergencyBanner)return; emergencyBanner.hidden=!mode; if(mode){emergencyBannerTitle.textContent=`EMERGENCY MODE · ${mode.title}`;emergencyBannerMessage.textContent=mode.message;playAlarmSound(3);addAlert({issued_at:mode.activated_at,critical:true,message:`${mode.title}: ${mode.message}`});} }
+  async function activateEmergency(){const title=emergencyTitle.value.trim(), messageText=emergencyMessage.value.trim();if(!title||!messageText)return emergencyStatus.textContent='Συμπλήρωσε τίτλο και οδηγίες.';if(!window.confirm('Να ενεργοποιηθεί Emergency Mode για όλη την ομάδα;'))return;try{const d=await securityApi('/api/security/emergency/activate',{title,message:messageText});setEmergencyStatus(d.emergency);}catch(e){emergencyStatus.textContent=e.message;}}
+  async function deactivateEmergency(){if(!window.confirm('Να τερματιστεί το Emergency Mode;'))return;try{await securityApi('/api/security/emergency/deactivate',{});setEmergencyStatus(null);}catch(e){emergencyStatus.textContent=e.message;}}
+  async function createShift(){try{await securityApi('/api/security/shifts/create',{name:$('shiftName').value,site:$('shiftSite').value,starts_at:new Date($('shiftStart').value).toISOString(),ends_at:new Date($('shiftEnd').value).toISOString(),members:[]});alert('Η βάρδια δημιουργήθηκε.');}catch(e){alert(e.message);}}
+  async function createCheckpoint(geofence=false){const payload={name:$('checkpointName').value,latitude:Number($('securityLatitude').value),longitude:Number($('securityLongitude').value),radius_m:Number($('securityRadius').value)};try{await securityApi(geofence?'/api/security/geofences/create':'/api/security/checkpoints/create',payload);alert(geofence?'Το geofence δημιουργήθηκε.':'Το checkpoint δημιουργήθηκε.');}catch(e){alert(e.message);}}
+  function initSecurityOps(role){ securityOpsPanel.hidden=false; supervisorTools.hidden=role!=='leader'; loadEmergencyStatus(); if(!supervisorTools.hidden){loadSecurityIncidents();loadSecurityReport();loadWellbeingStatus();} }
+  wellbeingButton?.addEventListener('click', sendWellbeingCheckin); refreshWellbeingButton?.addEventListener('click',loadWellbeingStatus); sosButton?.addEventListener('click', async () => { if (!connected) { await queueSecurityAction('/api/security/sos', { silent:false, title:'SOS — offline', location:await securityLocation() }); return; } sendSos(false); }); silentSosButton?.addEventListener('click', async () => { if (!connected) { await queueSecurityAction('/api/security/sos', { silent:true, title:'Silent panic — offline', location:await securityLocation() }); return; } sendSos(true); }); activateEmergencyButton?.addEventListener('click',activateEmergency); deactivateEmergencyButton?.addEventListener('click',deactivateEmergency); exportReportButton?.addEventListener('click',exportDetailedReport); exportPdfButton?.addEventListener('click',exportSecurityPdf); $('createSecurityIncidentButton')?.addEventListener('click',createSecurityIncident); $('refreshSecurityButton')?.addEventListener('click',loadSecurityIncidents); $('reportSecurityButton')?.addEventListener('click',loadSecurityReport); $('createShiftButton')?.addEventListener('click',createShift); $('createCheckpointButton')?.addEventListener('click',()=>createCheckpoint(false)); $('createGeofenceButton')?.addEventListener('click',()=>createCheckpoint(true));
+  const originalConnectSocket = connectSocket;
+  connectSocket = function(){ originalConnectSocket(); if(socket) socket.on('ptt_ready',(d)=>initSecurityOps(d?.role)); if(socket) socket.on('security_incident_created',(item)=>{ const highPriority=item.severity==='high'||item.severity==='critical'||item.incident_type==='sos'||item.incident_type==='panic'; addAlert({issued_at:item.created_at,critical:highPriority,message:`${item.title} από ${item.reported_by}`}); if(highPriority) playPriorityAlarm(); if(!supervisorTools.hidden) loadSecurityIncidents(); }); if(socket) socket.on('security_incident_updated',()=>{if(!supervisorTools.hidden)loadSecurityIncidents();}); if(socket) socket.on('security_sos_escalated',(item)=>{addAlert({issued_at:item.issued_at,critical:true,message:item.message});playPriorityAlarm();if(!supervisorTools.hidden)loadSecurityIncidents();}); if(socket) socket.on('emergency_mode',(mode)=>{setEmergencyStatus(mode);renderEmergencyBanner(mode);}); if(socket) socket.on('emergency_mode_ended',()=>{setEmergencyStatus(null);renderEmergencyBanner(null);}); };
+
+
+  // Phase 1 client hardening: passkeys, push registration and encrypted offline queue.
+  const phase1Message = $('phase1Message');
+  function phase1Status(text, error = false) { if (phase1Message) { phase1Message.textContent = text; phase1Message.classList.toggle('error', error); } }
+  async function registerPasskey() { if (!connected || !window.SimpleWebAuthnBrowser) return phase1Status('Σύνδεσε πρώτα τη συσκευή ή ο browser δεν υποστηρίζει passkeys.', true); try { const options = await securityApi('/api/security/passkeys/register/options'); const result = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options }); await securityApi('/api/security/passkeys/register/verify', { response: result }); phase1Status('Το passkey/βιομετρικό κλειδί καταχωρήθηκε.'); } catch (e) { phase1Status(e.message || 'Η καταχώρηση passkey απέτυχε.', true); } }
+  async function enablePush() { if (!('serviceWorker' in navigator) || !('Notification' in window)) return phase1Status('Οι ειδοποιήσεις δεν υποστηρίζονται σε αυτόν τον browser.', true); try { await navigator.serviceWorker.register('/sw.js'); const permission = await Notification.requestPermission(); if (permission !== 'granted') return phase1Status('Η άδεια ειδοποιήσεων δεν δόθηκε.', true); phase1Status('Οι ειδοποιήσεις ενεργοποιήθηκαν για τη συσκευή. Για αποστολή push απαιτούνται VAPID keys στον server.'); } catch(e) { phase1Status(e.message, true); } }
+  async function secureLogout() { try { await securityApi('/api/security/device/logout'); sessionToken=''; localStorage.removeItem('alpha_ptt_session'); socket?.disconnect(); location.reload(); } catch(e) { phase1Status(e.message, true); } }
+  $('registerPasskeyButton')?.addEventListener('click', registerPasskey); $('enablePushButton')?.addEventListener('click', enablePush); $('logoutDeviceButton')?.addEventListener('click', () => { if (window.confirm('Να γίνει ασφαλής αποσύνδεση και λήξη της συνεδρίας;')) secureLogout(); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  const offlineQueueKey = 'alpha_intercom_offline_queue';
+  async function queueSecurityAction(path, body) { const current = JSON.parse(localStorage.getItem(offlineQueueKey) || '[]'); current.push({ path, body, queued_at: new Date().toISOString() }); localStorage.setItem(offlineQueueKey, JSON.stringify(current.slice(-25))); phase1Status('Η ενέργεια αποθηκεύτηκε προσωρινά και θα σταλεί όταν επανέλθει η σύνδεση.'); }
+  async function flushSecurityQueue() { if (!connected) return; const current = JSON.parse(localStorage.getItem(offlineQueueKey) || '[]'); if (!current.length) return; const remaining=[]; for (const item of current) { try { await securityApi(item.path, item.body); } catch (_) { remaining.push(item); } } localStorage.setItem(offlineQueueKey, JSON.stringify(remaining)); if (!remaining.length) phase1Status('Οι εκκρεμείς ενέργειες συγχρονίστηκαν.'); }
+  window.addEventListener('online', flushSecurityQueue);
+  const previousInitSecurityOps = initSecurityOps; initSecurityOps = function(role) { previousInitSecurityOps(role); flushSecurityQueue(); };
+
+  let deferredInstallPrompt = null;
+  window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt = event; const installButton = $('installWebButton'); if (installButton) installButton.hidden = false; });
+  $('installWebButton')?.addEventListener('click', async () => { if (!deferredInstallPrompt) { phase1Status('Σε iPhone: Share → Add to Home Screen. Σε Chrome/Edge: μενού → Install app.'); return; } deferredInstallPrompt.prompt(); const result = await deferredInstallPrompt.userChoice; phase1Status(result.outcome === 'accepted' ? 'Το web shortcut εγκαταστάθηκε.' : 'Η εγκατάσταση ακυρώθηκε.'); deferredInstallPrompt = null; });
+
+
+  async function passkeyLogin() { const username=usernameInput.value; if (!username || !window.SimpleWebAuthnBrowser) return message('Επίλεξε profile και βεβαιώσου ότι ο browser υποστηρίζει passkeys.', true); try { const options=await fetch('/api/auth/passkey/options',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username})}).then(async(r)=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Passkey options failed');return d;}); const response=await SimpleWebAuthnBrowser.startAuthentication({optionsJSON:options}); const data=await fetch('/api/auth/passkey/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,hardware_uuid:deviceId,response})}).then(async(r)=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Passkey login failed');return d;}); sessionToken=data.session_token; localStorage.setItem('alpha_ptt_session',sessionToken);localStorage.setItem('alpha_ptt_username',username);authPanel.hidden=true;deviceInstallStep.hidden=false;connectSocket(); } catch(e) { message(e.message || 'Το passkey login απέτυχε.', true); } }
+  $('passkeyLoginButton')?.addEventListener('click', passkeyLogin);
+
+
+  // Phase 2 tracking client module: consented live guard positions and route trails.
+  const liveTrackingToggle=$('liveTrackingToggle'), trackingStatus=$('trackingStatus'), trackingGuardSelect=$('trackingGuardSelect'), trackingHours=$('trackingHours'), trackingHistoryButton=$('loadTrackingHistoryButton');
+  const trackingTrails=new Map(), trackingTrailPoints=new Map();
+  function trackingStatusText(active, detail=''){ trackingStatus.textContent=active ? `Live tracking ενεργό${detail ? ` · ${detail}` : ''}.` : 'Το live tracking είναι απενεργοποιημένο.'; trackingStatus.classList.toggle('tracking-active',active); }
+  async function startLiveTracking(){ if(!connected||!socket){liveTrackingToggle.checked=false;return trackingStatusText(false,'Δεν υπάρχει σύνδεση');} if(!navigator.geolocation){liveTrackingToggle.checked=false;return trackingStatusText(false,'Ο browser δεν υποστηρίζει GPS');} try{await securityApi('/api/security/tracking/start',{consent_text:'Ο φύλακας ενεργοποίησε live tracking για την τρέχουσα βάρδια.'}); trackingStatusText(true,'η θέση κοινοποιείται μόνο στον επόπτη'); locationSharingToggle.checked=true; updateLocationSharing(true); }catch(e){liveTrackingToggle.checked=false;trackingStatus.textContent=e.message;} }
+  async function stopLiveTracking(){ try{await securityApi('/api/security/tracking/stop',{});}catch(_){} updateLocationSharing(false); liveTrackingToggle.checked=false; trackingStatusText(false); }
+  function drawTrackingPoint(item){ if(!map||!item||item.latitude==null)return; const point=[Number(item.latitude),Number(item.longitude)]; const username=item.username||'unknown'; let trail=trackingTrails.get(username); if(!trail){trail=L.polyline([],{color:username==='ALFA'?'#e9c56b':'#65c9ff',weight:3,opacity:.8}).addTo(map);trackingTrails.set(username,trail);trackingTrailPoints.set(username,[]);} const points=trackingTrailPoints.get(username); points.push(point); if(points.length>500)points.shift(); trail.setLatLngs(points); }
+  async function loadTrackingHistory(){ if(!supervisorTools||supervisorTools.hidden)return; try{const d=await securityApi('/api/security/tracking/history',{username:trackingGuardSelect.value,hours:Number(trackingHours.value)}); trackingTrails.forEach((line)=>line.remove());trackingTrails.clear();trackingTrailPoints.clear();d.points.forEach(drawTrackingPoint);if(d.points.length&&map)map.fitBounds(d.points.map((p)=>[Number(p.latitude),Number(p.longitude)]),{padding:[24,24],maxZoom:17});}catch(e){trackingStatus.textContent=e.message;} }
+  async function loadTrackingGuards(){if(!supervisorTools||supervisorTools.hidden)return;try{const d=await securityApi('/api/security/tracking/sessions',{});trackingGuardSelect.replaceChildren(new Option('Όλοι οι φύλακες',''));d.sessions.forEach((s)=>trackingGuardSelect.appendChild(new Option(`${s.username}${s.active?' · LIVE':''}`,s.username)));}catch(_){} }
+  liveTrackingToggle?.addEventListener('change',()=>liveTrackingToggle.checked?startLiveTracking():stopLiveTracking()); trackingHistoryButton?.addEventListener('click',loadTrackingHistory);
+  const originalLocationToggle=locationSharingToggle?.onchange;
+  const previousConnectForTracking=connectSocket; connectSocket=function(){previousConnectForTracking();if(socket){socket.on('tracking_status',(d)=>{if(d.username===usernameInput.value){liveTrackingToggle.checked=Boolean(d.active);trackingStatusText(Boolean(d.active));}loadTrackingGuards();});socket.on('location_update',(d)=>{drawTrackingPoint(d);loadTrackingGuards();});socket.on('geofence_status',(d)=>{if(d.inside)addAlert({issued_at:d.captured_at,critical:false,message:`${d.username} εντός ζώνης ${d.name}`});});socket.on('ptt_ready',()=>{loadTrackingGuards();});}};
+
+
+  async function checkWebAttestation(){try{const d=await securityApi('/api/security/device/attestation/status',{});phase1Status(d.web_attested?`Web device attestation ενεργή · ${d.passkey_count} passkey.`:'Δεν υπάρχει passkey attestation. Καταχώρησε passkey/biometric.',!d.web_attested);}catch(e){phase1Status(e.message,true);}}
+  const registerPasskeyButton = $('registerPasskeyButton'); if (registerPasskeyButton && !$('attestationStatusButton')) { const button = document.createElement('button'); button.id = 'attestationStatusButton'; button.className = 'secondary-button'; button.type = 'button'; button.textContent = 'ΕΛΕΓΧΟΣ DEVICE ATTESTATION'; registerPasskeyButton.parentNode?.insertBefore(button, registerPasskeyButton.nextSibling); button.addEventListener('click', checkWebAttestation); }
+
 })();

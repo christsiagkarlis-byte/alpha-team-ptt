@@ -4,9 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#07100d">
-  <meta name="description" content="Alpha Team secure Push-to-Talk intercom dashboard">
-  <title>Alpha Team Intercom</title>
+  <meta name="description" content="Team Stadium secure Push-to-Talk operations dashboard">
+  <title>Team Stadium</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 </head>
 <body>
   <main class="app-shell">
@@ -15,13 +17,33 @@
         <div class="security-icon" aria-hidden="true"><span>✦</span></div>
         <div>
           <p class="eyebrow">SECURITY NETWORK</p>
-          <h1>Alpha Team Intercom</h1>
+          <h1>Team Stadium</h1>
         </div>
       </div>
       <div id="connectionBadge" class="connection-badge disconnected" role="status" aria-live="polite">
         <span class="status-dot"></span><span id="connectionText">Disconnected</span>
       </div>
     </header>
+    <section id="emergencyBanner" class="emergency-banner" hidden role="alert" aria-live="assertive"><strong id="emergencyBannerTitle">EMERGENCY MODE</strong><span id="emergencyBannerMessage"></span></section>
+
+    <section id="authPanel" class="identity-panel panel" aria-labelledby="authTitle">
+      <div class="panel-heading compact-heading"><div><p class="eyebrow">PRIVATE ACCESS</p><h2 id="authTitle">Verify device access</h2></div><span class="mini-state">LOCKED</span></div>
+      <div class="identity-controls">
+        <label>Access code<input id="accessCodeInput" type="password" autocomplete="off" placeholder="Enter private access code"></label>
+        <button id="verifyCodeButton" class="secondary-button" type="button">VERIFY CODE</button>
+        <label>Mode<select id="authMode"><option value="enroll">First setup / enroll</option><option value="login">Returning device / login</option></select></label>
+        <label>Personal PIN<input id="pinInput" type="password" minlength="4" autocomplete="new-password" disabled></label>
+        <label>Confirm PIN<input id="pinConfirmInput" type="password" minlength="4" autocomplete="new-password" disabled></label>
+        <button id="authSubmitButton" class="secondary-button" type="button" disabled>CONTINUE</button><button id="passkeyLoginButton" class="secondary-button" type="button">LOGIN WITH PASSKEY / BIOMETRIC</button>
+      </div>
+      <p id="authMessage" class="helper-text" role="status" aria-live="polite">Enter the private access code first.</p>
+    </section>
+
+    <section id="deviceInstallStep" class="device-install-step panel" hidden aria-live="polite">
+      <span class="eyebrow">DEVICE STATUS</span>
+      <h3>Εγκατάσταση συσκευής</h3>
+      <p>Η συσκευή εγκαταστάθηκε επιτυχώς και είναι έτοιμη για ασφαλή επικοινωνία.</p>
+    </section>
 
     <section class="identity-panel panel" aria-labelledby="identityTitle">
       <div class="panel-heading compact-heading">
@@ -38,22 +60,92 @@
           </select>
         </label>
         <label>Hardware UUID
-          <input id="hardwareUuidInput" type="text" autocomplete="off" maxlength="255" spellcheck="false" placeholder="Bound device identifier">
+          <input id="hardwareUuidInput" type="text" autocomplete="off" maxlength="255" spellcheck="false" placeholder="Generated securely for this device" readonly>
         </label>
         <button id="connectButton" class="secondary-button" type="button">CONNECT DEVICE</button>
       </div>
       <p id="connectionMessage" class="helper-text">Enter the bound identity and device UUID to establish a secure channel.</p>
+      <div class="identity-controls alpha-controls"><label>ALFA reset member<select id="resetMemberInput"><option value="Bravo">Bravo</option><option value="Charlie">Charlie</option><option value="Delta">Delta</option></select></label><button id="resetMemberButton" class="secondary-button" type="button">RESET MEMBER</button></div>
+    </section>
+
+    <section id="locationPanel" class="location-panel panel" hidden aria-labelledby="locationTitle">
+      <div class="panel-heading compact-heading">
+        <div><p class="eyebrow">OPTIONAL LOCATION SHARING</p><h2 id="locationTitle">Τοποθεσία συσκευής</h2></div>
+        <span class="mini-state">CONSENT</span>
+      </div>
+      <div class="location-controls">
+        <label class="location-consent"><input id="locationSharingToggle" type="checkbox"> <span>Κοινοποίηση της θέσης μου στον ALFA</span></label>
+        <p class="helper-text location-privacy">Η κοινοποίηση είναι προαιρετική, απαιτεί άδεια GPS από τον browser και μπορεί να διακοπεί οποιαδήποτε στιγμή. Αποθηκεύεται μόνο η τελευταία γνωστή θέση.</p><label class="location-consent tracking-consent"><input id="liveTrackingToggle" type="checkbox"> <span>Live tracking βάρδιας προς τον επόπτη</span></label><p id="trackingStatus" class="helper-text">Το live tracking είναι απενεργοποιημένο.</p>
+      </div>
+      <div id="alfaLocationMenu" hidden><div class="tracking-toolbar"><label>Φύλακας<select id="trackingGuardSelect"><option value="">Όλοι οι φύλακες</option></select></label><label>Ιστορικό<select id="trackingHours"><option value="4">4 ώρες</option><option value="8" selected>8 ώρες</option><option value="24">24 ώρες</option><option value="72">72 ώρες</option></select></label><button id="loadTrackingHistoryButton" class="secondary-button" type="button">ΠΡΟΒΟΛΗ ΔΙΑΔΡΟΜΗΣ</button></div>
+        <div class="location-map-heading"><h3>Χάρτης ομάδας</h3><span id="locationCount" class="count-badge">0 ΘΕΣΕΙΣ</span></div>
+        <div class="alarm-controls"><button id="alarmToggleButton" class="alarm-button" type="button">ΕΝΕΡΓΟΠΟΙΗΣΗ ΗΧΟΥ ALARM</button><span id="alarmStatus" class="alarm-status">Ο ήχος alarm είναι απενεργοποιημένος.</span></div>
+        <div id="locationMap" class="location-map" aria-label="Χάρτης θέσεων ομάδας"></div>
+        <div id="locationList" class="location-list" aria-live="polite"><p class="empty-alert">Δεν υπάρχουν κοινοποιημένες θέσεις.</p></div>
+      </div>
+    </section>
+
+    <section id="incidentPanel" class="incident-panel panel" hidden aria-labelledby="incidentTitle">
+      <div class="panel-heading compact-heading">
+        <div><p class="eyebrow">PRIORITY COMMUNICATION</p><h2 id="incidentTitle">Συμβάν</h2></div>
+        <span class="alert-marker">SEND TO ALFA</span>
+      </div>
+      <div class="incident-controls">
+        <label>Κωδικός συμβάντος
+          <select id="incidentCodeInput"><option value="">Επίλεξε κωδικό...</option></select>
+        </label>
+        <label class="incident-gps-consent"><input id="incidentGpsToggle" type="checkbox" checked> <span>Συμπερίληψη τρέχουσας θέσης GPS</span></label>
+        <button id="sendIncidentButton" class="incident-button" type="button" disabled>ΑΠΟΣΤΟΛΗ ΣΥΜΒΑΝΤΟΣ ΣΤΟΝ ALFA</button>
+        <p id="incidentMessage" class="helper-text" role="status" aria-live="polite">Ο κωδικός και η θέση θα σταλούν μόνο στον ALFA.</p>
+      </div>
+    </section>
+
+
+    <section id="securityOpsPanel" class="security-ops-panel panel" hidden aria-labelledby="securityOpsTitle">
+      <div class="panel-heading compact-heading"><div><p class="eyebrow">ALFA SUPERVISOR CONSOLE</p><h2 id="securityOpsTitle">Κέντρο ασφάλειας</h2></div><span class="alert-marker">LIVE OPS</span></div>
+      <div class="security-grid">
+        <div class="sos-card"><div><p class="eyebrow">EMERGENCY</p><h3>Άμεση βοήθεια</h3><p>Στέλνει SOS στον επόπτη με την τελευταία διαθέσιμη θέση.</p></div><button id="sosButton" class="sos-button" type="button">SOS / PANIC</button><button id="silentSosButton" class="secondary-button" type="button">SILENT PANIC</button><span id="sosMessage" class="helper-text" role="status"></span></div>
+        <div class="ops-card wellbeing-card"><p class="eyebrow">PERSONAL SAFETY</p><h3>Κατάσταση προσωπικού</h3><p>Στείλε άμεση επιβεβαίωση ότι είσαι καλά και συνεχίζεις την περιπολία.</p><button id="wellbeingButton" class="secondary-button" type="button">ΕΙΜΑΙ ΚΑΛΑ</button><span id="wellbeingMessage" class="helper-text" role="status"></span></div>
+        <div class="ops-card"><div class="panel-heading compact-heading"><h3>Νέο περιστατικό</h3></div><label>Τίτλος<input id="securityIncidentTitle" maxlength="160" placeholder="π.χ. ύποπτη κίνηση"></label><label>Σοβαρότητα<select id="securityIncidentSeverity"><option value="low">Χαμηλή</option><option value="medium" selected>Μεσαία</option><option value="high">Υψηλή</option><option value="critical">Κρίσιμη</option></select></label><label>Περιγραφή<textarea id="securityIncidentDescription" rows="2" maxlength="4000"></textarea></label><button id="createSecurityIncidentButton" class="secondary-button" type="button">ΚΑΤΑΓΡΑΦΗ ΠΕΡΙΣΤΑΤΙΚΟΥ</button></div>
+      </div>
+      <div id="phase1Controls" class="ops-card phase1-controls"><h3>Προστασία συσκευής</h3><button id="registerPasskeyButton" class="secondary-button" type="button">ΠΡΟΣΘΗΚΗ PASSKEY / BIOMETRIC</button><button id="enablePushButton" class="secondary-button" type="button">ΕΝΕΡΓΟΠΟΙΗΣΗ ΕΙΔΟΠΟΙΗΣΕΩΝ</button><button id="installWebButton" class="secondary-button" type="button">ΕΓΚΑΤΑΣΤΑΣΗ WEB SHORTCUT</button><button id="logoutDeviceButton" class="secondary-button" type="button">ΑΣΦΑΛΗΣ ΑΠΟΣΥΝΔΕΣΗ ΣΥΣΚΕΥΗΣ</button><span id="phase1Message" class="helper-text"></span></div>
+      <div id="supervisorTools" hidden>
+        <div class="ops-toolbar"><button id="refreshSecurityButton" class="secondary-button" type="button">ΑΝΑΝΕΩΣΗ ΚΕΝΤΡΟΥ</button><button id="reportSecurityButton" class="secondary-button" type="button">ΑΝΑΛΥΤΙΚΗ ΑΝΑΦΟΡΑ</button><label>Σοβαρότητα<select id="exportSeverityFilter"><option value="">Όλες</option><option value="low">Χαμηλή</option><option value="medium">Μεσαία</option><option value="high">Υψηλή</option><option value="critical">Κρίσιμη</option></select></label><label>Από<input id="exportDateFrom" type="date"></label><label>Έως<input id="exportDateTo" type="date"></label><button id="exportReportButton" class="secondary-button" type="button">ΕΞΑΓΩΓΗ CSV</button><button id="exportPdfButton" class="secondary-button" type="button">ΕΞΑΓΩΓΗ PDF</button><span id="securityReport" class="report-strip"></span></div>
+        <div class="ops-card emergency-console"><h3>Emergency Mode</h3><label>Τίτλος<input id="emergencyTitle" maxlength="160" value="Έκτακτη κατάσταση"></label><label>Οδηγίες<textarea id="emergencyMessage" rows="2" maxlength="4000" placeholder="π.χ. Κλείστε την Πύλη 2 και μετακινηθείτε στη βόρεια έξοδο."></textarea></label><div class="emergency-actions"><button id="activateEmergencyButton" class="sos-button" type="button">ΕΝΕΡΓΟΠΟΙΗΣΗ EMERGENCY</button><button id="deactivateEmergencyButton" class="secondary-button" type="button">ΛΗΞΗ EMERGENCY</button></div><span id="emergencyStatus" class="helper-text" role="status"></span></div>
+        <div class="ops-card wellbeing-status-card"><div class="panel-heading compact-heading"><h3>Έλεγχος ομάδας</h3><button id="refreshWellbeingButton" class="secondary-button" type="button">ΑΝΑΝΕΩΣΗ</button></div><div id="wellbeingList" class="security-list"><p class="empty-alert">Φόρτωση…</p></div></div>
+        <div class="ops-card"><div class="panel-heading compact-heading"><h3>Ενεργά περιστατικά</h3><span id="securityIncidentCount" class="count-badge">0</span></div><div id="securityIncidentList" class="security-list"><p class="empty-alert">Δεν υπάρχουν περιστατικά.</p></div></div>
+        <div class="security-grid"><div class="ops-card"><h3>Βάρδια</h3><label>Όνομα<input id="shiftName" placeholder="Βάρδια Α"></label><label>Σημείο<input id="shiftSite" placeholder="Στάδιο / Πύλη"></label><label>Έναρξη<input id="shiftStart" type="datetime-local"></label><label>Λήξη<input id="shiftEnd" type="datetime-local"></label><button id="createShiftButton" class="secondary-button" type="button">ΔΗΜΙΟΥΡΓΙΑ ΒΑΡΔΙΑΣ</button><div id="shiftList" class="security-list"></div></div><div class="ops-card"><h3>Checkpoint / Geofence</h3><label>Όνομα σημείου<input id="checkpointName" placeholder="Πύλη 1"></label><label>Latitude<input id="securityLatitude" type="number" step="any" placeholder="GPS latitude"></label><label>Longitude<input id="securityLongitude" type="number" step="any" placeholder="GPS longitude"></label><label>Ακτίνα (m)<input id="securityRadius" type="number" value="75"></label><button id="createCheckpointButton" class="secondary-button" type="button">ΠΡΟΣΘΗΚΗ CHECKPOINT</button><button id="createGeofenceButton" class="secondary-button" type="button">ΠΡΟΣΘΗΚΗ GEOFENCE</button><div id="checkpointList" class="security-list"></div></div></div>
+      </div>
+    </section>
+
+    <section id="helpPanel" class="help-panel panel" hidden aria-labelledby="helpTitle">
+      <div class="panel-heading compact-heading">
+        <div><p class="eyebrow">GUIDE &amp; OPERATIONS</p><h2 id="helpTitle">Βοήθεια</h2></div>
+        <span class="mini-state">ΟΔΗΓΙΕΣ</span>
+      </div>
+      <div class="help-content">
+        <details open><summary>Πώς χρησιμοποιώ τη συνομιλία</summary><p>Για να μιλήσεις, κράτησε πατημένο το κουμπί <strong>PUSH TO TALK</strong>. Μίλησε όσο το κρατάς πατημένο και άφησέ το για να σταματήσει η μετάδοση. Αν το κανάλι είναι απασχολημένο ή ο ALFA κάνει override, θα εμφανιστεί σχετική ένδειξη.</p></details>
+        <details><summary>Πώς στέλνω συμβάν</summary><p>Άνοιξε την ενότητα <strong>Συμβάν</strong>, επίλεξε τον κατάλληλο κωδικό και πάτησε <strong>ΑΠΟΣΤΟΛΗ ΣΥΜΒΑΝΤΟΣ ΣΤΟΝ ALFA</strong>. Με ενεργό GPS θα σταλεί μαζί η τρέχουσα θέση και η ακρίβειά της. Αν δεν υπάρχει σήμα GPS, το συμβάν μπορεί να σταλεί χωρίς θέση.</p></details>
+        <details><summary>Πώς λειτουργεί το GPS</summary><p>Η κοινοποίηση θέσης είναι προαιρετική. Ενεργοποίησε το checkbox «Κοινοποίηση της θέσης μου στον ALFA» και επίτρεψε την πρόσβαση τοποθεσίας στον browser. Αποθηκεύεται μόνο η τελευταία γνωστή θέση και μπορείς να σταματήσεις την κοινοποίηση οποιαδήποτε στιγμή.</p></details>
+        <details><summary>Κωδικοί συμβάντων</summary><ul id="helpIncidentCodes" class="help-code-list"><li>Φόρτωση κωδικών…</li></ul></details>
+        <div id="helpAlfaSection" hidden>
+          <details open><summary>Οδηγίες ALFA — χάρτης και θέσεις</summary><p>Ο ALFA βλέπει στον χάρτη τις τελευταίες θέσεις που έχουν κοινοποιηθεί. Κάθε marker δείχνει username, ακρίβεια και ώρα τελευταίας ενημέρωσης. Οι θέσεις είναι ορατές μόνο στον ALFA.</p></details>
+          <details><summary>Οδηγίες ALFA — alarm</summary><p>Πάτησε μία φορά «ΕΝΕΡΓΟΠΟΙΗΣΗ ΗΧΟΥ ALARM» για να επιτρέψει ο browser τον ήχο. Μετά, οι κρίσιμοι κωδικοί — μεταξύ τους ο <strong>ΚΩΔΙΚΟΣ ΕΚΚΕΝΩΣΗΣ ΧΩΡΟΥ: ΣΤΑΔΙΟ</strong> — παράγουν ηχητικό alarm και κόκκινη ειδοποίηση.</p></details>
+          <details><summary>Οδηγίες ALFA — διαχείριση</summary><p>Το κουμπί <strong>RESET MEMBER</strong> διαγράφει τη σύνδεση συγκεκριμένου μέλους, ώστε να μπορέσει να εγγράψει νέα συσκευή. Χρησιμοποίησέ το μόνο όταν χρειάζεται και επιβεβαίωσε πρώτα την ταυτότητα του μέλους.</p></details>
+        </div>
+        <details><summary>Ασφάλεια και ιδιωτικότητα</summary><p>Μην κοινοποιείς τον κωδικό πρόσβασης ή το PIN. Η θέση GPS στέλνεται μόνο όταν ενεργοποιήσεις τη σχετική επιλογή ή όταν επιλέξεις να συμπεριληφθεί σε συμβάν. Για σωστή λειτουργία απαιτούνται HTTPS και άδεια τοποθεσίας.</p></details>
+      </div>
     </section>
 
     <section class="channel-panel panel" aria-labelledby="channelTitle">
       <div class="panel-heading">
         <div>
           <p class="eyebrow">LIVE CHANNEL</p>
-          <h2 id="channelTitle">Alpha Team</h2>
+          <h2 id="channelTitle">Team Stadium</h2>
         </div>
         <label class="channel-select-label">Channel
           <select id="channelInput">
-            <option value="alpha-team">ALPHA TEAM</option>
+            <option value="alpha-team">TEAM STADIUM</option>
           </select>
         </label>
       </div>
@@ -65,6 +157,7 @@
           <span class="ptt-core"><strong id="pttLabel">PUSH TO TALK</strong><small id="pttHint">CONNECT DEVICE FIRST</small></span>
         </button>
         <p class="ptt-instruction">Press and hold to transmit · Release to listen</p>
+        <p id="audioStatus" class="audio-status" role="status" aria-live="polite">Secure voice audio is ready after connection.</p>
       </div>
     </section>
 
@@ -72,7 +165,7 @@
       <div class="panel-heading">
         <div>
           <p class="eyebrow">OPERATIONS ROSTER</p>
-          <h2 id="directoryTitle">Alpha Team Directory</h2>
+          <h2 id="directoryTitle">Team Stadium Directory</h2>
         </div>
         <span id="onlineCount" class="count-badge">0 / 31 ONLINE</span>
       </div>
@@ -93,6 +186,8 @@
     </section>
   </main>
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/vendor/simplewebauthn.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/app.js"></script>
 </body>
 </html>
