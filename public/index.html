@@ -37,8 +37,12 @@
         <button id="authSubmitButton" class="secondary-button" type="button" disabled>CONTINUE</button><button id="passkeyLoginButton" class="secondary-button" type="button">LOGIN WITH PASSKEY / BIOMETRIC</button>
       </div>
       <p id="authMessage" class="helper-text" role="status" aria-live="polite">Enter the private access code first.</p>
+      <div class="access-steps" aria-label="Βήματα χρήστη">
+        <strong>Βήματα:</strong> 1) Βάλε τον Access code · 2) Πάτησε VERIFY CODE · 3) Επίλεξε First setup / enroll · 4) Βάλε PIN και Confirm PIN · 5) Πάτησε CONTINUE · 6) Επίλεξε profile και πάτησε CONNECT DEVICE.
+      </div>
     </section>
 
+    <div id="protectedApp" hidden>
     <section id="deviceInstallStep" class="device-install-step panel" hidden aria-live="polite">
       <span class="eyebrow">DEVICE STATUS</span>
       <h3>Εγκατάσταση συσκευής</h3>
@@ -184,6 +188,7 @@
         <p class="empty-alert">No emergency alerts received.</p>
       </div>
     </section>
+    </div>
   </main>
   <script src="/socket.io/socket.io.js"></script>
   <script src="/vendor/simplewebauthn.umd.min.js"></script>
