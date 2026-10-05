@@ -68,6 +68,7 @@ const ACTIVATION_TTL_SECONDS = boundedInteger('ACTIVATION_TTL_SECONDS', 600, 60,
 const STATUS_TTL_SECONDS = boundedInteger('REDIS_STATUS_TTL_SECONDS', 120, 30, 3600);
 const PTT_LOCK_TTL_SECONDS = boundedInteger('PTT_LOCK_TTL_SECONDS', 30, 5, 300);
 const JWT_ISSUER = process.env.JWT_ISSUER || 'alpha-team-ptt';
+const PGSSL_REJECT_UNAUTHORIZED = process.env.PGSSL_REJECT_UNAUTHORIZED !== 'false';
 const SESSION_TTL_SECONDS = boundedInteger('SESSION_TTL_SECONDS', 86400, 300, 604800);
 const ADMIN_RATE_LIMIT_WINDOW_MS = boundedInteger('ADMIN_RATE_LIMIT_WINDOW_SECONDS', 60, 10, 3600) * 1000;
 const ADMIN_RATE_LIMIT_MAX = boundedInteger('ADMIN_RATE_LIMIT_MAX', 20, 1, 1000);
@@ -155,7 +156,7 @@ app.use(express.static('public'));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: true } : false,
+  ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: PGSSL_REJECT_UNAUTHORIZED } : false,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000
